@@ -167,5 +167,5 @@ person2['birth_date'] = pd.to_datetime(person2['birth_date'].astype(str).str.spl
 person2['vaccination_date']=pd.to_datetime(person2['vaccination_date'].astype(str).str.split('T').str[0], format='%Y%m%d') 
 person2['age'] =np.floor((pd.to_datetime('2021-12-31', format='%Y-%m-%d') - person2['birth_date']).dt.days / 365.25).astype(int)
 
-tmp = person2.vaccine.all_vaccines()
-person2.analysis.calculate_vaccine_rate(tmp).to_excel('/mnt/d/标准库接种率/vacc_rate.xlsx',index=False)
+# tmp = person2.vaccine.all_vaccines()
+# person2.analysis.calculate_vaccine_rate(tmp).to_excel('/mnt/d/标准库接种率/vacc_rate.xlsx',index=False)
