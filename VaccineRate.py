@@ -6,6 +6,7 @@ import VaccRate
 person2['year_month'] = person2['vaccination_date'].dt.strftime('%Y-%m')
 person2['vaccination_org']=person2['vaccination_org'].astype(str)
 person2['entry_org']=person2['entry_org'].astype(str)
+
 conditions = [
     person2['vaccination_code'].isin(['0101']),
     person2['vaccination_code'].isin(['0201', '0202', '0203']),
@@ -61,7 +62,7 @@ tmp2 = (
 
 
 # 乙肝
-tmp = person2.vaccine.hbv().query("(year_month == '2021-01')")
+tmp = person2.vaccine.all_vaccines().query("(year_month == '2021-01')")
 # mask = tmp['vaccination_org'].isin(['777777777777', '999999999999', '888888888888', '666666666666']) & (tmp['jc'] == 1)
 # tmp.loc[mask, 'vaccination_org'] = tmp.loc[mask, 'entry_org']
 
@@ -81,50 +82,54 @@ tmp['vaccination_org'] = np.select(conditions, [tmp['entry_org']], default=tmp['
     .query("vaccination_org=='333647265032'")
 )
 
-
-(
-    person2
-    .query("(id_x not in @id_jz.id_x) & (age <= 6)")
-    .assign(month=person2['birth_date'].apply(calculate_month_difference))
-    .groupby(['current_management_code'])
-    .agg(yingzhong=('id_x', 'nunique'))
-    .reset_index()
-    .query("current_management_code=='333647265032'")
-)
-
-(
-    person2
-    .query("(id_x not in @id_jz.id_x) & (age < 7)")
-    .assign(month=person2['birth_date'].apply(calculate_month_difference))
-    .query("0<= month < 13")
-    .groupby(['current_management_code'])
-    .agg(yingzhong=('id_x', 'nunique'))
-    .reset_index()
-    .query("current_management_code=='333647265032'")
-)
+tmp['vaccination_date']>='2021-01'
 
 
 # 每个人接种疫苗的剂次
-jzjc= (
+jzjc = (
     pd.MultiIndex.from_product(
-        [person2['id_x'].unique(), 
+        [tmp['id_x'].unique(), 
          ['卡介苗', '乙肝疫苗', '脊灰疫苗', '百白破疫苗', '含麻疹成分疫苗', '白破疫苗', '流脑疫苗A群', '流脑疫苗AC群', '乙脑疫苗', '甲肝疫苗']],
         names=['id_x', 'vaccine_name']
     )
     .to_frame(index=False)
     .merge(
-        person2.groupby(['id_x', 'vaccine_name']).agg(jzjc=('id_x', 'size')).reset_index(),
+        tmp.groupby(['id_x', 'vaccine_name']).size().reset_index(name='jzjc'),
         on=['id_x', 'vaccine_name'],
         how='left'
     )
-    .fillna(0)
+    .fillna({'jzjc': 0})
+    .astype({'jzjc': 'int'})
 )
 
-test=(
-    jzjc.query("(vaccine_name=='乙肝疫苗') & (jzjc==0)")
+# 实种
+(
+    tmp
+    .query("vaccination_date>=birth_date & age<18 & vaccine_name=='乙肝疫苗'")
+    .groupby(['vaccination_org','jc'])
+    .agg(vac=('id_x', 'nunique'))
+    .reset_index()
+    .query("vaccination_org=='333647265032'")
 )
 
-tmp=(
-    person2.query("(age<=6) & (birth_date<='2021-01-31') & (birth_date>='2020-01-01') & (current_management_code=='333647265032') & (id_x in @test.id_x)")
-    .drop_duplicates(subset=['id_x'])
+#应种
+tmp2=(
+    person2
+    .merge(jzjc,how='outer',on=['id_x','vaccine_name'])
+
 )
+
+tmp2.loc[tmp2['vaccination_date'] > '2021-01-31', 'jzjc'] = 0
+
+(
+    tmp2
+    .query("jzjc==0 & vaccine_name=='乙肝疫苗' & age<=6")
+    .groupby(['current_management_code'])
+    .agg(yingzhong=('id_x', 'nunique'))
+    .reset_index()
+    .query("current_management_code=='333647265032'")
+)
+
+
+person2.to_pickle('/mnt/d/标准库接种率/person2.pkl')
+tmp.to_pickle('/mnt/d/标准库接种率/tmp.pkl')

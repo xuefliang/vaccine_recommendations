@@ -165,7 +165,7 @@ person__vaccination=pd.read_csv('/mnt/d/标准库接种率/标准库数据/perso
 person2=person.merge(person__vaccination,how='left',left_on='id',right_on='person_id')
 person2['birth_date'] = pd.to_datetime(person2['birth_date'].astype(str).str.split('T').str[0], format='%Y%m%d') 
 person2['vaccination_date']=pd.to_datetime(person2['vaccination_date'].astype(str).str.split('T').str[0], format='%Y%m%d') 
-person2['age'] =np.floor((pd.to_datetime('2021-12-31', format='%Y-%m-%d') - person2['birth_date']).dt.days / 365.25).astype(int)
+person2['age'] =np.floor((pd.to_datetime('2021-01-31', format='%Y-%m-%d') - person2['birth_date']).dt.days / 365.25).astype(int)
 
 # tmp = person2.vaccine.all_vaccines()
 # person2.analysis.calculate_vaccine_rate(tmp).to_excel('/mnt/d/标准库接种率/vacc_rate.xlsx',index=False)
