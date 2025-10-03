@@ -69,7 +69,7 @@ recommendations_BCG_1 = (
     ])
     .with_columns(
         recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='卡介苗') | (pl.col("age") > 4)
+            (pl.col("vaccine_name")=='卡介苗') | (pl.col("age_month") > 4*12)
         )
         .then(None)
         .otherwise(pl.col("recommended_dates"))
@@ -96,7 +96,7 @@ recommendations_HBV_1 = (
     ])
     .with_columns(
         recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='乙肝疫苗') & (pl.col("vaccination_seq")==1))
+            (pl.col("vaccine_name")=='乙肝疫苗') & (pl.col('age') >6))
         .then(None)
         .otherwise(pl.col("recommended_dates"))
     )
@@ -129,6 +129,12 @@ recommendations_HBV_2 = (
         pl.lit('0201').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
     ])
+    .with_columns(
+        recommended_dates=pl.when(
+            (pl.col("vaccine_name")=='乙肝疫苗') & ((pl.col('age_month') <1) | ( pl.col('age')>6)))
+        .then(None)
+        .otherwise(pl.col("recommended_dates"))
+    )
     .group_by("id_x")
     .agg([
         pl.col("recommended_dates").drop_nulls().first(),
@@ -187,6 +193,12 @@ recommendations_HBV_3 = (
         pl.lit('0201').alias("recommended_vacc"),
         pl.lit(3).alias('recommended_seq')
     ])
+    .with_columns(
+        recommended_dates=pl.when(
+            (pl.col("vaccine_name")=='乙肝疫苗') & ((pl.col('age_month') <6) | ( pl.col('age')>6)))
+        .then(None)
+        .otherwise(pl.col("recommended_dates"))
+    )
     .group_by("id_x")
     .agg([
         # 取两个时间的最大值作为推荐时间
@@ -424,7 +436,6 @@ recommendations_DPT_2 = (
         pl.col("current_management_code").first()
     ])
 )
-
 
 recommendations_DPT_3 = (
     person.with_columns([
@@ -886,10 +897,4 @@ recommendations_HAVL_2 = (
         pl.col("entry_date").first(),
         pl.col("current_management_code").first()
     ])
-)
-
-
-tmp=(
-    person
-    .filter(pl.col.id_x=='0002f78c9e6c43748cbeda817b1203f5')
 )
