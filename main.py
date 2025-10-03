@@ -4,16 +4,18 @@ import pandas as pd
 import numpy as np
 from datetime import timedelta
 import janitor
+from script.common import *
 
 person2=pd.read_pickle('/mnt/d/标准库接种率/data/person2.pkl')
-# jzjl=pd.read_pickle('/mnt/d/标准库接种率/data/jzjl.pkl')
+person2=person2.query("current_management_code=='334878619388' | vaccination_org=='334878619388'")
+# # jzjl=pd.read_pickle('/mnt/d/标准库接种率/data/jzjl.pkl')
 
-# person=pd.read_csv('/mnt/d/标准库接种率/标准库数据/person_standard.csv',dtype={'CURRENT_MANAGEMENT_CODE':str}).clean_names()
-# person__vaccination=pd.read_csv('/mnt/d/标准库接种率/标准库数据/person_standard_vaccination.csv',dtype={'VACCINATION_CODE':str}).clean_names()
-# person2=person.merge(person__vaccination,how='left',left_on='id',right_on='person_id')
+# # person=pd.read_csv('/mnt/d/标准库接种率/标准库数据/person_standard.csv',dtype={'CURRENT_MANAGEMENT_CODE':str}).clean_names()
+# # person__vaccination=pd.read_csv('/mnt/d/标准库接种率/标准库数据/person_standard_vaccination.csv',dtype={'VACCINATION_CODE':str}).clean_names()
+# # person2=person.merge(person__vaccination,how='left',left_on='id',right_on='person_id')
 
 #统计日期
-mon_stat='2020-12'
+mon_stat='2021-01'
 mon_end=pd.date_range(mon_stat, periods=1, freq='M')[0]
 
 person2['birth_date'] = pd.to_datetime(person2['birth_date'], format='%Y%m%dT%H%M%S')
@@ -25,29 +27,62 @@ person2['age'] = np.floor((pd.to_datetime(mon_end, format='%Y-%m-%d') - person2[
 person2['months'] = np.floor((pd.to_datetime(mon_end, format='%Y-%m-%d') - person2['birth_date']).dt.days / 30.44).astype(int)
 person2['year_month'] = person2['vaccination_date'].dt.strftime('%Y-%m')
 person2['vacc_months'] = np.floor((person2['vaccination_date'] - person2['birth_date']).dt.days / 30.44).astype(int)
+person2=replace(person2)
 
-from script.Vaccine import *
-# 出生队列接种率
-result=person2.vaccine.cohort_rate(by_age=True)
-
-# 时段接种率
-from script.Vaccine import *
-result = person2.vaccine.duration_rate(mon_stat)
-
-
-# from vaccineanalysis import *
-# from Period.common import *
-# jzjl = person2.vaccineanalysis.all_vaccines()
-# jzjc=get_immuhis(jzjl)
-# jzjl['months'] = np.floor((pd.to_datetime(mon_end, format='%Y-%m-%d') - jzjl['birth_date']).dt.days / 30.44).astype(int)
 # jzjl['vacc_months'] = np.floor((jzjl['vaccination_date'] - jzjl['birth_date']).dt.days / 30.44).astype(int)
+# jzjl['months'] = np.floor((pd.to_datetime(mon_end, format='%Y-%m-%d') - jzjl['birth_date']).dt.days / 30.44).astype(int)
+# from script.Vaccine import *
+# # 出生队列接种率
+# cohort_result=person2.vaccine.cohort_rate(by_age=True)
+# cohort_result[['lower_ci', 'upper_ci']] = cohort_result.apply(
+#     lambda row: calculate_ci(row['vac'],row['cnt'], confidence_level=0.95), axis=1
+# )
 
-# 乙肝疫苗1和卡介苗1补录按实种
-# condition = (jzjl['vaccination_org'].isin(['777777777777', '888888888888', '999999999999'])) & \
-#             (jzjl['vaccine_name'].isin(['乙肝疫苗', '卡介苗'])) & \
-#             (jzjl['jc'] == 1)
+# # 时段接种率
+# from script.Vaccine import *
+# from script.common import *
+# # test=person2.vaccine.MenA1(mon_stat)
+# duration_result = person2.vaccine.duration_rate(mon_stat)
+# duration_result[['lower_ci', 'upper_ci']] = duration_result.apply(
+#     lambda row: calculate_ci(int(row['actual_count']),int(row['actual_count'] + row['expected_count'] + row['invalid_count']), confidence_level=0.95), axis=1
+# )
 
-# jzjl.loc[condition, 'vaccination_org'] = jzjl['entry_org']
+
+
+# # print("Current working directory:", os.getcwd())
+
+# # project_dir = '/mnt/d/标准库接种率/'
+# # if os.getcwd() != project_dir:
+# #     os.chdir(project_dir)
+
+# # for path in sys.path:
+# #     print(path)
+
+# jz = (
+#     pd.read_csv('/mnt/d/标准库接种率/data/jiezhongmingxi.csv', dtype=str)
+#     .clean_names()
+#     .rename(columns={
+#         'grda_code': 'id_x',
+#         'csrq': 'birth_date',
+#         'gldw_bm': 'current_management_code',
+#         'ym_bm': 'vaccination_code',
+#         'jz_sj': 'vaccination_date',
+#         'jzdd_dm': 'vaccination_org',
+#         'xt_djjgdm': 'entry_org'
+#     })
+# )
+
+# jz['birth_date'] = pd.to_datetime(jz['birth_date'], format='%Y/%m/%d',errors='coerce')
+# jz['vaccination_date'] = pd.to_datetime(jz['vaccination_date'], format='%Y/%m/%d %H:%M:%S', errors='coerce')
+# jz=(
+#     jz.query("vaccination_date>=birth_date & birth_date.notnull() & vaccination_date.notnull()")
+# )
+# #计算年龄、月龄、接种年月、接种月龄
+# jz['age'] = np.floor((pd.to_datetime(mon_end, format='%Y-%m-%d') - jz['birth_date']).dt.days / 365.25).astype(int)
+# jz['months'] = np.floor((pd.to_datetime(mon_end, format='%Y-%m-%d') - jz['birth_date']).dt.days / 30.44).astype(int)
+# jz['year_month'] = jz['vaccination_date'].dt.strftime('%Y-%m')
+# jz['vacc_months'] = np.floor((jz['vaccination_date'] - jz['birth_date']).dt.days / 30.44)
+# jz['vacc_months'] = jz['vacc_months'].astype(int)
 
 # 计算免疫史，每个人接种疫苗
 # jzjc= (
@@ -66,39 +101,53 @@ result = person2.vaccine.duration_rate(mon_stat)
 #     .astype({'jzjc': 'int'})
 # )
 
-# print("Current working directory:", os.getcwd())
 
-# project_dir = '/mnt/d/标准库接种率/'
-# if os.getcwd() != project_dir:
-#     os.chdir(project_dir)
+######################################################################
+#统计日期
+# mon_stat='2024-06'
+# mon_end=pd.date_range(mon_stat, periods=1, freq='ME')[0]
+# jz = (
+#     pd.read_csv('/mnt/d/标准库接种率/data/jiezhongmingxi.csv', dtype=str)
+#     .clean_names()
+#     .rename(columns={
+#         'grda_code': 'id_x',
+#         'csrq': 'birth_date',
+#         'gldw_bm': 'current_management_code',
+#         'ym_bm': 'vaccination_code',
+#         'jz_sj': 'vaccination_date',
+#         'jzdd_dm': 'vaccination_org',
+#         'xt_djjgdm': 'entry_org'
+#     })
+#     .assign(
+#         birth_date=lambda df: pd.to_datetime(df['birth_date'], format='%Y/%m/%d', errors='coerce'),
+#         vaccination_date=lambda df: pd.to_datetime(df['vaccination_date'], format='%Y/%m/%d %H:%M:%S', errors='coerce')
+#     )
+#     .query("vaccination_date >= birth_date & birth_date.notnull() & vaccination_date.notnull()")
+#     .assign(
+#         age=lambda df: np.floor((mon_end - df['birth_date']).dt.days / 365.25).astype(int),
+#         months=lambda df: np.floor((mon_end - df['birth_date']).dt.days / 30.44).astype(int),
+#         year_month=lambda df: df['vaccination_date'].dt.strftime('%Y-%m'),
+#         vacc_months=lambda df: np.floor((df['vaccination_date'] - df['birth_date']).dt.days / 30.44).astype(int)
+#     )
+# )
 
-# for path in sys.path:
-#     print(path)
+# from script.Vaccine import *
+# # 出生队列接种率
+# cohort_result=jz.vaccine.cohort_rate(by_age=True)
+# cohort_result[['lower_ci', 'upper_ci']] = cohort_result.apply(
+#     lambda row: calculate_ci(row['vac'],row['cnt'], confidence_level=0.95), axis=1
+# )
 
-# from Period import BCG, HBV, DPT, PV, HepA, JEV, MCV, MenA, MenAC, TD
-# # 定义需要调用的函数列表
-# functions = [
-#     BCG.BCG,
-#     HBV.HBV1, HBV.HBV2, HBV.HBV3,
-#     DPT.DPT1, DPT.DPT2, DPT.DPT3, DPT.DPT4,
-#     PV.PV1, PV.PV2, PV.PV3, PV.PV4,
-#     MCV.MCV1, MCV.MCV2,
-#     HepA.HepA,
-#     JEV.JEV1, JEV.JEV2,
-#     MenA.MenA1, MenA.MenA2,
-#     MenAC.MenAC1, MenAC.MenAC2,
-#     # TD.TD
-# ]
-# # 使用列表推导式调用函数并生成结果列表
-# results = [func(jzjl, person2, jzjc, mon_stat, mon_end) for func in functions]
-# result = pd.concat(results)
+# 时段接种率
+from script.Vaccine import *
+from script.common import *
 
-# from scipy.stats import binomtest
-# def calculate_ci(row, confidence_level=0.95):
-#     k = int(row['actual_count'])
-#     n = int(row['actual_count'] + row['expected_count'] + row['invalid_count'])
-#     bino = binomtest(k=k, n=n, p=0.05, alternative='two-sided')
-#     ci = bino.proportion_ci(confidence_level=confidence_level)
-#     return pd.Series([ci.low * 100, ci.high * 100], index=['lower_ci', 'upper_ci'])
+# test = person2.iloc[0:1000, person2.columns.get_indexer(['id_x','patient_name', 'birth_date','current_management_code',
+# 'vaccination_code', 'vaccination_date', 'vaccination_seq',
+# 'vaccination_org', 'entry_org','entry_date', 'age', 'months',
+# 'year_month', 'vacc_months'])]
 
-# result[['lower_ci', 'upper_ci']] = result.apply(calculate_ci, axis=1, confidence_level=0.95)
+duration_result = person2.vaccine.duration_rate(mon_stat)
+duration_result[['lower_ci', 'upper_ci']] = duration_result.apply(
+    lambda row: calculate_ci(int(row['actual_count']),int(row['actual_count'] + row['expected_count'] + row['invalid_count']), confidence_level=0.95), axis=1
+)
