@@ -35,7 +35,6 @@ person=(
     .join(vaccine_tbl,left_on="vaccination_code",right_on="小类编码",how='left')
     .with_columns(pl.col("vaccine_name").str.split(","))
     .explode("vaccine_name")
-    .filter(pl.col("vaccination_date")<=pl.col("expiration_date"))
     .sort(["id_x", "vaccine_name", "vaccination_date"])
     .with_columns([
         pl.int_range(pl.len()).add(1).alias('vaccination_seq').over(["id_x", "vaccine_name"])
@@ -43,36 +42,24 @@ person=(
 )
 
 
-#根据出生日期计算第一针推荐时间，如果卡介苗第一针已经实种则修改推荐时间为空，如果未种则保留。
-(
-    person.with_columns([
-        pl.col("birth_date").dt.offset_by("1d").alias("recommended_dates"),
-        pl.lit('0101').alias("recommended_vacc"),
-        pl.lit(1).alias('recommended_seq')
-    ])
-    .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccination_code").str.contains("0101")) | (pl.col("age") > 4)
-        )
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
-    )
-)
-
-
 # 为每个人计算卡介苗的推荐时间
 recommendations_BCG_1 = (
-    person.with_columns([
-        pl.col("birth_date").dt.offset_by("1d").alias("recommended_dates"),
-        pl.lit('0101').alias("recommended_vacc"),
+    person
+    .with_columns([
+        pl.col("birth_date").dt.offset_by("0d").alias("recommended_dates"),
+        pl.lit('卡介苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='卡介苗') | (pl.col("age_month") > 4*12)
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == '卡介苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
         )
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['卡介苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -89,16 +76,22 @@ recommendations_BCG_1 = (
 
 
 recommendations_HBV_1 = (
-    person.with_columns([
-        pl.col("birth_date").dt.offset_by("1d").alias("recommended_dates"),
-        pl.lit('0201').alias("recommended_vacc"),
-        pl.lit(2).alias('recommended_seq')
+    person
+    .with_columns([
+        pl.col("birth_date").dt.offset_by("0d").alias("recommended_dates"),
+        pl.lit('乙肝疫苗').alias("recommended_vacc"),
+        pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='乙肝疫苗') & (pl.col('age') >6))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == '乙肝疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['乙肝疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -114,7 +107,8 @@ recommendations_HBV_1 = (
 )
 
 recommendations_HBV_2 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
             (pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == '乙肝疫苗')
         )
@@ -126,14 +120,21 @@ recommendations_HBV_2 = (
         )
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('0201').alias("recommended_vacc"),
+        pl.lit('乙肝疫苗').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
-    ])
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='乙肝疫苗') & ((pl.col('age_month') <1) | ( pl.col('age')>6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '乙肝疫苗') &
+            (pl.col('vaccination_seq') == 2) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '乙肝疫苗') &
+            (pl.col('vaccination_seq') == 1))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -146,7 +147,7 @@ recommendations_HBV_2 = (
         pl.col("entry_date").first(),
         pl.col("current_management_code").first()
     ])
-)
+) 
 
 
 recommendations_HBV_3 = (
@@ -188,24 +189,32 @@ recommendations_HBV_3 = (
         )
         .then(pl.col("vaccination_date").dt.offset_by("60d"))   # ≥12月龄，与第2剂间隔60天
         .otherwise(None)
-        .alias("from_dose2"),
-        
-        pl.lit('0201').alias("recommended_vacc"),
-        pl.lit(3).alias('recommended_seq')
+        .alias("from_dose2")
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='乙肝疫苗') & ((pl.col('age_month') <6) | ( pl.col('age')>6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.max_horizontal([
+            pl.col("from_dose1").shift(),
+            pl.col("from_dose2")
+        ]).alias("recommended_dates"),
+        pl.lit('乙肝疫苗').alias("recommended_vacc"),
+        pl.lit(3).alias('recommended_seq')
+    )
+    .with_columns(
+        pl.when(
+            (pl.col('recommended_seq') == 3) & (pl.col("大类名称") == '乙肝疫苗') &
+            (pl.col('vaccination_seq') == 3) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 3) & (pl.col("大类名称") == '乙肝疫苗') &
+            (pl.col('vaccination_seq') == 2))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
-        # 取两个时间的最大值作为推荐时间
-        pl.max_horizontal([
-            pl.col("from_dose1").drop_nulls().first(),
-            pl.col("from_dose2").drop_nulls().first()
-        ]).alias("recommended_dates"),
+        pl.col("recommended_dates").drop_nulls().first(),
         pl.col("recommended_vacc").first(),
         pl.col("recommended_seq").first(),
         pl.col("birth_date").first(),
@@ -229,7 +238,7 @@ recommendations_HBV_4 = (
         .then(pl.col("vaccination_date").dt.offset_by("5mo"))
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('0201').alias("recommended_vacc"),
+        pl.lit('乙肝疫苗').alias("recommended_vacc"),
         pl.lit(4).alias('recommended_seq')
     ])
     .group_by("id_x")
@@ -247,16 +256,22 @@ recommendations_HBV_4 = (
 
 
 recommendations_POL_1 = (
-    person.with_columns([
+    person
+    .with_columns([
         pl.col("birth_date").dt.offset_by("2mo").alias("recommended_dates"),
-        pl.lit('0303').alias("recommended_vacc"),
+        pl.lit('脊灰疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='脊灰疫苗') & ((pl.col("age_month") <2)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == '脊灰疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['脊灰疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -273,7 +288,8 @@ recommendations_POL_1 = (
 
 
 recommendations_POL_2 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
             (pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == '脊灰疫苗')
         )
@@ -285,14 +301,21 @@ recommendations_POL_2 = (
         )
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('0303').alias("recommended_vacc"),
+        pl.lit('脊灰疫苗').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
-    ])
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='脊灰疫苗') & ((pl.col("age_month") <3)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '脊灰疫苗') &
+            (pl.col('vaccination_seq') == 2) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '脊灰疫苗') &
+            (pl.col('vaccination_seq') == 1))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -308,26 +331,34 @@ recommendations_POL_2 = (
 )
 
 recommendations_POL_3 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            (pl.col("vaccination_seq") == 2) & (pl.col("vaccine_name") == '脊灰疫苗')
-        )
-        .then(
-            pl.max_horizontal([
+        (pl.col("vaccination_seq") == 2) & (pl.col("vaccine_name") == '脊灰疫苗')
+    )
+    .then(
+        pl.max_horizontal([
                 pl.col("birth_date").dt.offset_by("4mo"),
                 pl.col("vaccination_date").dt.offset_by("1mo")
-            ])
-        )
-        .otherwise(None)
-        .alias("recommended_dates"),
-        pl.lit('0311').alias("recommended_vacc"),
-        pl.lit(3).alias('recommended_seq')
-    ])
+        ])
+    )
+    .otherwise(None)
+    .alias("recommended_dates"),
+    pl.lit('脊灰疫苗').alias("recommended_vacc"),
+    pl.lit(3).alias('recommended_seq')
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='脊灰疫苗') & ((pl.col("age_month") <4)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 3) & (pl.col("大类名称") == '脊灰疫苗') &
+            (pl.col('vaccination_seq') == 3) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 3) & (pl.col("大类名称") == '脊灰疫苗') &
+            (pl.col('vaccination_seq') == 2))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -343,26 +374,34 @@ recommendations_POL_3 = (
 )
 
 recommendations_POL_4 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            (pl.col("vaccination_seq") == 3) & (pl.col("vaccine_name") == '脊灰疫苗')
-        )
-        .then(
-            pl.max_horizontal([
+        (pl.col("vaccination_seq") == 3) & (pl.col("vaccine_name") == '脊灰疫苗')
+    )
+    .then(
+        pl.max_horizontal([
                 pl.col("birth_date").dt.offset_by("4y"),
                 pl.col("vaccination_date").dt.offset_by("1mo")
-            ])
-        )
-        .otherwise(None)
-        .alias("recommended_dates"),
-        pl.lit('0311').alias("recommended_vacc"),
-        pl.lit(4).alias('recommended_seq')
-    ])
+        ])
+    )
+    .otherwise(None)
+    .alias("recommended_dates"),
+    pl.lit('脊灰疫苗').alias("recommended_vacc"),
+    pl.lit(4).alias('recommended_seq')
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='脊灰疫苗') & ((pl.col("age") <4)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 4) & (pl.col("大类名称") == '脊灰疫苗') &
+            (pl.col('vaccination_seq') == 4) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 4) & (pl.col("大类名称") == '脊灰疫苗') &
+            (pl.col('vaccination_seq') == 3))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -380,14 +419,19 @@ recommendations_POL_4 = (
 recommendations_DPT_1 = (
     person.with_columns([
         pl.col("birth_date").dt.offset_by("2mo").alias("recommended_dates"),
-        pl.lit('0402').alias("recommended_vacc"),
+        pl.lit('百白破疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='百白破疫苗') & ((pl.col("age_month") <2)) | ((pl.col("age") >7)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['百白破疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -403,7 +447,8 @@ recommendations_DPT_1 = (
 )
 
 recommendations_DPT_2 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
             (pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == '百白破疫苗')
         )
@@ -415,14 +460,21 @@ recommendations_DPT_2 = (
         )
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('0402').alias("recommended_vacc"),
+        pl.lit('百白破疫苗').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
-    ])
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='百白破疫苗') & ((pl.col("age_month") <4)) | ((pl.col("age") >7)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 2) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 1))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -438,26 +490,34 @@ recommendations_DPT_2 = (
 )
 
 recommendations_DPT_3 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            (pl.col("vaccination_seq") == 2) & (pl.col("vaccine_name") == '百白破疫苗')
-        )
-        .then(
-            pl.max_horizontal([
+        (pl.col("vaccination_seq") == 2) & (pl.col("vaccine_name") == '百白破疫苗')
+    )
+    .then(
+        pl.max_horizontal([
                 pl.col("birth_date").dt.offset_by("6mo"),
                 pl.col("vaccination_date").dt.offset_by("1mo")
-            ])
-        )
-        .otherwise(None)
-        .alias("recommended_dates"),
-        pl.lit('0402').alias("recommended_vacc"),
-        pl.lit(3).alias('recommended_seq')
-    ])
+        ])
+    )
+    .otherwise(None)
+    .alias("recommended_dates"),
+    pl.lit('百白破疫苗').alias("recommended_vacc"),
+    pl.lit(3).alias('recommended_seq')
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='百白破疫苗') & ((pl.col("age_month") <6)) | ((pl.col("age") >7)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 3) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 3) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 3) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 2))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -473,26 +533,34 @@ recommendations_DPT_3 = (
 )
 
 recommendations_DPT_4 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            (pl.col("vaccination_seq") == 3) & (pl.col("vaccine_name") == '百白破疫苗')
-        )
-        .then(
-            pl.max_horizontal([
+        (pl.col("vaccination_seq") == 3) & (pl.col("vaccine_name") == '百白破疫苗')
+    )
+    .then(
+        pl.max_horizontal([
                 pl.col("birth_date").dt.offset_by("18mo"),
                 pl.col("vaccination_date").dt.offset_by("1mo")
-            ])
-        )
-        .otherwise(None)
-        .alias("recommended_dates"),
-        pl.lit('0402').alias("recommended_vacc"),
-        pl.lit(4).alias('recommended_seq')
-    ])
+        ])
+    )
+    .otherwise(None)
+    .alias("recommended_dates"),
+    pl.lit('百白破疫苗').alias("recommended_vacc"),
+    pl.lit(4).alias('recommended_seq')
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='百白破疫苗') & ((pl.col("age_month") <18)) | ((pl.col("age") >7)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 4) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 4) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 4) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 3))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -508,26 +576,34 @@ recommendations_DPT_4 = (
 )
 
 recommendations_DPT_5 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            (pl.col("vaccination_seq") == 4) & (pl.col("vaccine_name") == '百白破疫苗')
-        )
-        .then(
-            pl.max_horizontal([
+        (pl.col("vaccination_seq") == 4) & (pl.col("vaccine_name") == '百白破疫苗')
+    )
+    .then(
+        pl.max_horizontal([
                 pl.col("birth_date").dt.offset_by("6y"),
                 pl.col("vaccination_date").dt.offset_by("1mo")
-            ])
-        )
-        .otherwise(None)
-        .alias("recommended_dates"),
-        pl.lit('0402').alias("recommended_vacc"),
-        pl.lit(5).alias('recommended_seq')
-    ])
+        ])
+    )
+    .otherwise(None)
+    .alias("recommended_dates"),
+    pl.lit('百白破疫苗').alias("recommended_vacc"),
+    pl.lit(5).alias('recommended_seq')
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='百白破疫苗') & ((pl.col("age") <6)) | ((pl.col("age") >7)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 5) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 5) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 5) & (pl.col("大类名称") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 4))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -543,16 +619,22 @@ recommendations_DPT_5 = (
 )
 
 recommendations_DT_1 = (
-    person.with_columns([
+    person
+    .with_columns([
         pl.col("birth_date").dt.offset_by("7y").alias("recommended_dates"),
-        pl.lit('0601').alias("recommended_vacc"),
+        pl.lit('白破疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='白破疫苗') & ((pl.col("age") <7)) | ((pl.col("age") >11)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == '白破疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['白破疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -570,14 +652,19 @@ recommendations_DT_1 = (
 recommendations_MCV_1 = (
     person.with_columns([
         pl.col("birth_date").dt.offset_by("8mo").alias("recommended_dates"),
-        pl.lit('1201').alias("recommended_vacc"),
+        pl.lit('含麻疹成分疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='含麻疹成分疫苗') & ((pl.col("age_month") <8)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == '含麻疹成分疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['含麻疹成分疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -593,7 +680,8 @@ recommendations_MCV_1 = (
 )
 
 recommendations_MCV_2 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
             (pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == '含麻疹成分疫苗')
         )
@@ -605,14 +693,21 @@ recommendations_MCV_2 = (
         )
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('1201').alias("recommended_vacc"),
+        pl.lit('含麻疹成分疫苗').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
-    ])
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='含麻疹成分疫苗') & ((pl.col("age_month") <18)) | ((pl.col("age") >7)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '含麻疹成分疫苗') &
+            (pl.col('vaccination_seq') == 2) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '含麻疹成分疫苗') &
+            (pl.col('vaccination_seq') == 1))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -628,16 +723,22 @@ recommendations_MCV_2 = (
 )
 
 recommendations_MAV_1 = (
-    person.with_columns([
+    person
+    .with_columns([
         pl.col("birth_date").dt.offset_by("6mo").alias("recommended_dates"),
-        pl.lit('1601').alias("recommended_vacc"),
+        pl.lit('A群流脑疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='A群流脑疫苗') & ((pl.col("age_month") <6)) | ((pl.col("age_month") >23)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == 'A群流脑疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['A群流脑疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -653,10 +754,10 @@ recommendations_MAV_1 = (
 )
 
 recommendations_MAV_2 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            ((pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群流脑疫苗')) |
-            ((pl.col("vaccination_seq") == 1) & (pl.col("vaccination_code").is_in(['1702', '1703', '1704'])))
+            (pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群C群流脑疫苗')
         )
         .then(
             pl.max_horizontal([
@@ -666,14 +767,25 @@ recommendations_MAV_2 = (
         )
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('1601').alias("recommended_vacc"),
+        pl.lit('A群C群流脑疫苗').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
-    ])
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='A群流脑疫苗') & ((pl.col("age_month") <9)) | ((pl.col("age_month") >23)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == 'A群流脑疫苗') &
+            (pl.col('vaccination_seq') == 2) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == 'A群流脑疫苗') &
+            (pl.col('vaccination_seq') == 1))
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == 'A群C群流脑疫苗') &
+            (pl.col('vaccination_seq') == 1) & (pl.col('vacc_month')<6)) 
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -689,46 +801,43 @@ recommendations_MAV_2 = (
 )
 
 recommendations_MAC_1 = (
-    person.with_columns([
+    person
+    .with_columns([
         # 为每个人标记A群流脑疫苗免疫剂次数
         ((pl.col("vaccine_name") == 'A群流脑疫苗') & (pl.col("age") >= 2)).sum().over("id_x").alias("his_ma"),
     ])
+    .filter(
+        # 合并三个条件：his_ma==2且vaccine_name=='A群流脑疫苗'，或his_ma==1且vaccine_name=='A群流脑疫苗'，或his_ma==0
+        ((pl.col('his_ma') == 2) & (pl.col("vaccine_name") == 'A群流脑疫苗')) |
+        ((pl.col('his_ma') == 1) & (pl.col("vaccine_name") == 'A群流脑疫苗')) |
+        (pl.col('his_ma') == 0)
+    )
     .with_columns([
-        pl.when((pl.col("vaccination_seq") == 2) & (pl.col("vaccine_name") == 'A群流脑疫苗'))
+        # 根据his_ma值设置不同的recommended_dates
+        pl.when(pl.col('his_ma') == 2)
         .then(pl.col("birth_date").dt.offset_by("3y"))
-        .otherwise(None)
+        .when(pl.col('his_ma') == 1)
+        .then(pl.max_horizontal([
+            pl.col("birth_date").dt.offset_by("2y"),
+            pl.col("vaccination_date").dt.offset_by("3mo")
+        ]))
+        .otherwise(pl.col("birth_date").dt.offset_by("2y"))
         .alias("recommended_dates"),
-        pl.lit('1701').alias("recommended_vacc"),
+        
+        pl.lit('A群C群流脑疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='A群C群流脑疫苗') & ((pl.col("age") < 3) | (pl.col("age") > 6))
-        )
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
-    )
-    .with_columns([
         pl.when(
-            (pl.col("vaccination_seq") == 1) & 
-            (pl.col("vaccine_name") == 'A群流脑疫苗') &
-            (pl.col("his_ma") == 1) 
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == 'A群C群流脑疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
         )
-        .then(
-            pl.max_horizontal([
-                pl.col("birth_date").dt.offset_by("3y"),
-                pl.col("vaccination_date").dt.offset_by("3mo")
-            ])
-        )
-        .otherwise(pl.col("recommended_dates"))
-        .alias("recommended_dates")
-    ])
-    .with_columns([
-        pl.when(pl.col("his_ma") == 0)
-        .then(pl.col("birth_date").dt.offset_by("3y"))
-        .otherwise(pl.col("recommended_dates"))
-        .alias("recommended_dates")
-    ])
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['A群C群流脑疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
+    )
     .group_by("id_x")
     .agg([
         pl.col("recommended_dates").drop_nulls().first(),
@@ -743,27 +852,34 @@ recommendations_MAC_1 = (
 )
 
 recommendations_MAC_2 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            ((pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群C群流脑疫苗')) |
-            ((pl.col("vaccination_seq") == 1) & (pl.col("vacc_month")>=24) & (pl.col("vaccination_code").is_in(['1702', '1703', '1704'])))
+            (pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群C群流脑疫苗')
         )
         .then(
             pl.max_horizontal([
-                pl.col("birth_date").dt.offset_by("5y"),
+                pl.col("birth_date").dt.offset_by("6y"),
                 pl.col("vaccination_date").dt.offset_by("3y")
             ])
         )
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('1701').alias("recommended_vacc"),
+        pl.lit('A群C群流脑疫苗').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
-    ])
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='A群C群流脑疫苗') & (pl.col("age") <5))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == 'A群C群流脑疫苗') &
+            (pl.col('vaccination_seq') == 2) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == 'A群C群流脑疫苗') &
+            (pl.col('vaccination_seq') == 1))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -780,16 +896,22 @@ recommendations_MAC_2 = (
 
 
 recommendations_JE_1 = (
-    person.with_columns([
+    person
+    .with_columns([
         pl.col("birth_date").dt.offset_by("8mo").alias("recommended_dates"),
-        pl.lit('1801').alias("recommended_vacc"),
+        pl.lit('乙脑疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='乙脑疫苗') & ((pl.col("age_month") <8)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == '乙脑疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['乙脑疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -805,9 +927,10 @@ recommendations_JE_1 = (
 )
 
 recommendations_JE_2 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            ((pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == '乙脑疫苗'))
+            (pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == '乙脑疫苗')
         )
         .then(
             pl.max_horizontal([
@@ -817,14 +940,21 @@ recommendations_JE_2 = (
         )
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('1801').alias("recommended_vacc"),
+        pl.lit('乙脑疫苗').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
-    ])
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='乙脑疫苗') & ((pl.col("age") <2)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '乙脑疫苗') &
+            (pl.col('vaccination_seq') == 2) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '乙脑疫苗') &
+            (pl.col('vaccination_seq') == 1))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -840,16 +970,22 @@ recommendations_JE_2 = (
 )
 
 recommendations_HAV_1 = (
-    person.with_columns([
+    person
+    .with_columns([
         pl.col("birth_date").dt.offset_by("18mo").alias("recommended_dates"),
-        pl.lit('1901').alias("recommended_vacc"),
+        pl.lit('甲肝疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='甲肝疫苗') & ((pl.col("age_month") <18)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == '甲肝疫苗') &
+            (pl.col('vaccination_seq') == 1) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(~(pl.col("大类名称").is_in(['甲肝疫苗'])))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
@@ -865,9 +1001,10 @@ recommendations_HAV_1 = (
 )
 
 recommendations_HAVL_2 = (
-    person.with_columns([
+    person
+    .with_columns(
         pl.when(
-            ((pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == '甲肝疫苗'))
+            (pl.col("vaccination_seq") == 1) & (pl.col("小类名称") == '甲型肝炎灭活疫苗（人二倍体细胞）')
         )
         .then(
             pl.max_horizontal([
@@ -877,14 +1014,21 @@ recommendations_HAVL_2 = (
         )
         .otherwise(None)
         .alias("recommended_dates"),
-        pl.lit('1903').alias("recommended_vacc"),
+        pl.lit('甲肝疫苗').alias("recommended_vacc"),
         pl.lit(2).alias('recommended_seq')
-    ])
+    )
     .with_columns(
-        recommended_dates=pl.when(
-            (pl.col("vaccine_name")=='甲肝疫苗') & ((pl.col("age_month") <24)) | ((pl.col("age") >6)))
-        .then(None)
-        .otherwise(pl.col("recommended_dates"))
+        pl.when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '甲肝疫苗') &
+            (pl.col('vaccination_seq') == 2) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 2) & (pl.col("大类名称") == '甲肝疫苗') &
+            (pl.col('vaccination_seq') == 1))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
     )
     .group_by("id_x")
     .agg([
