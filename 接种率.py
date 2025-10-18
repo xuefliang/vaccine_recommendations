@@ -6,7 +6,9 @@ vaccine_tbl=pl.read_excel('ym_bm.xlsx')
 person=(
     pl.read_csv('/mnt/d/标准库接种率/data/person2.csv',schema_overrides={"vaccination_code":pl.Utf8,"birth_date":pl.Datetime,"vaccination_date":pl.Datetime,"hepatitis_mothers":pl.Utf8})
     .with_columns([
-        pl.lit('2021-01-15').str.to_date().dt.month_end().alias('expiration_date')
+        pl.lit('2021-01-15').str.to_date().dt.month_end().alias('expiration_date'),
+        pl.lit('2021-01-15').str.to_date().dt.month_start().alias('mon_start'),
+        pl.lit('2021-01-15').str.to_date().dt.month_end().alias('mon_end')
     ])
     .with_columns([
         (
@@ -39,6 +41,12 @@ person=(
     .with_columns([
         pl.int_range(pl.len()).add(1).alias('vaccination_seq').over(["id_x", "vaccine_name"])
     ])
+    .with_columns(
+        pl.when((pl.col('vaccination_org') == 777777777777) & (pl.col('vaccine_name').is_in(['乙肝疫苗','卡介苗'])) & (pl.col('vaccination_seq')==1))
+        .then(pl.col('entry_org'))
+        .otherwise(pl.col('vaccination_org'))
+        .alias('vaccination_org')
+    )
 )
 
 
