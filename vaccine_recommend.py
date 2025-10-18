@@ -298,8 +298,10 @@ def _calculate_single_vaccine_recommendation(person: pl.DataFrame, config: Dict[
         pl.col("recommended_seq").first(), 
         pl.col("birth_date").first(),
         pl.col("age").first(),
+        pl.col("age_month").first(),
         pl.col("entry_org").first(),
         pl.col("entry_date").first(),
+        pl.col("vaccination_org").first(),
         pl.col("current_management_code").first()
     ])
   
@@ -573,6 +575,8 @@ def validate_person_data(person: pl.DataFrame) -> bool:
 if __name__ == "__main__":
     # 假设person DataFrame已经准备好
     # person = pl.read_csv("person_vaccination_data.csv")
+
+    validate_person_data(person)
     
     # 计算所有疫苗推荐时间
     recommendations = get_consolidated_vaccine_recommendations(person)
