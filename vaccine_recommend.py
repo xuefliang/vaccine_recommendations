@@ -579,7 +579,13 @@ if __name__ == "__main__":
     validate_person_data(person)
     
     # 计算所有疫苗推荐时间
-    recommendations = get_consolidated_vaccine_recommendations(person)
+    recommendations = (
+        get_consolidated_vaccine_recommendations(person)
+        .with_columns(
+            pl.lit('2021-01-15').str.to_date().dt.month_start().alias('mon_start'),
+            pl.lit('2021-01-15').str.to_date().dt.month_end().alias('mon_end')
+        )
+    )
 
     # 获取特定疫苗推荐
     hbv_recommendations = get_recommendations_by_vaccine(person, "乙肝疫苗")
