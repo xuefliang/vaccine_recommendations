@@ -233,6 +233,47 @@ def calculate_coverage(
     return result.select(standardized_columns)
 
 
+def calculate_vaccine_coverage_for_all_doses(
+    person: pl.DataFrame,
+    recommendations: pl.DataFrame,
+    vaccine_name: str,
+    dose_configs: List[Tuple[int, int, int, int, bool]]
+) -> List[pl.DataFrame]:
+    """
+    计算某个疫苗所有剂次的接种率
+    
+    Args:
+        person: 接种记录数据框
+        recommendations: 推荐接种数据框
+        vaccine_name: 疫苗名称
+        dose_configs: 剂次配置列表 [(序号, 实种最大年龄, 应种最大年龄, 应种最小年龄, 是否需要前一针)]
+    
+    Returns:
+        各剂次接种率数据框列表
+    """
+    coverage_list = []
+    
+    for seq, actual_max_age, expected_max_age, expected_min_age, require_prev in dose_configs:
+        # 计算实种
+        actual = calculate_actual_vaccination(person, vaccine_name, seq, actual_max_age)
+        
+        # 计算应种
+        expected = calculate_expected_vaccination(
+            recommendations, person, vaccine_name, seq, 
+            expected_max_age, expected_min_age, require_prev
+        )
+        
+        # 根据原代码，乙肝疫苗第1针使用 inner join，其他使用 right join
+        join_how = 'inner' if (vaccine_name == '乙肝疫苗' and seq == 1) else 'right'
+        
+        # 计算接种率
+        coverage = calculate_coverage(actual, expected, join_how=join_how)
+        
+        coverage_list.append(coverage)
+    
+    return coverage_list
+
+
 def calculate_all_vaccines_coverage(
     person: pl.DataFrame,
     recommendations: pl.DataFrame,
@@ -269,12 +310,7 @@ def calculate_all_vaccines_coverage(
     
     # 合并所有结果
     if all_coverage:
-        # 在合并前，再次确认所有 DataFrame 的列类型
-        # 打印第一个 DataFrame 的 schema 用于调试
-        print("第一个 DataFrame 的 schema:")
-        print(all_coverage[0].schema)
-        
-        # 现在所有 DataFrame 都有相同的列结构和数据类型，可以安全地合并
+        # 所有 DataFrame 都有相同的列结构和数据类型，可以安全地合并
         combined_coverage = pl.concat(all_coverage, how='vertical')
         
         # 重命名为最终的列名
