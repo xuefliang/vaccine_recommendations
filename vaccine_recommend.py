@@ -129,7 +129,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "0d",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         # 乙肝疫苗
         {
@@ -139,7 +138,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "0d",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "乙肝疫苗",
@@ -148,7 +146,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "1mo",
             "dependency": {"prev_dose": 1, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "乙肝疫苗",
@@ -157,7 +154,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": None,
             "dependency": None,
             "special_calc": "hbv_dose3",
-            "status_override": None,
         },
         {
             "vaccine_name": "乙肝疫苗",
@@ -166,7 +162,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": None,
             "dependency": {"prev_dose": 3, "min_interval": "5mo"},
             "special_calc": "high_risk_hbv",
-            "status_override": None,
         },
         # 脊灰疫苗
         {
@@ -176,7 +171,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "2mo",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "脊灰疫苗",
@@ -185,7 +179,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "3mo",
             "dependency": {"prev_dose": 1, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "脊灰疫苗",
@@ -194,7 +187,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "4mo",
             "dependency": {"prev_dose": 2, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "脊灰疫苗",
@@ -203,7 +195,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "4y",
             "dependency": {"prev_dose": 3, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         # 百白破疫苗
         {
@@ -213,7 +204,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "2mo",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "百白破疫苗",
@@ -222,7 +212,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "4mo",
             "dependency": {"prev_dose": 1, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "百白破疫苗",
@@ -231,7 +220,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "6mo",
             "dependency": {"prev_dose": 2, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "百白破疫苗",
@@ -240,7 +228,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "18mo",
             "dependency": {"prev_dose": 3, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "百白破疫苗",
@@ -249,7 +236,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "6y",
             "dependency": {"prev_dose": 4, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         # 白破疫苗
         {
@@ -259,7 +245,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "7y",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         # 含麻疹成分疫苗
         {
@@ -269,7 +254,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "8mo",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "含麻疹成分疫苗",
@@ -278,7 +262,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "18mo",
             "dependency": {"prev_dose": 1, "min_interval": "1mo"},
             "special_calc": None,
-            "status_override": None,
         },
         # A群流脑疫苗
         {
@@ -288,20 +271,18 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "6mo",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         {
-            "vaccine_name": "A群C群流脑疫苗",
+            "vaccine_name": "A群流脑疫苗",
             "vaccine_category": "A群流脑疫苗",
             "dose": 2,
             "base_schedule": "9mo",
             "dependency": {
                 "prev_dose": 1,
                 "min_interval": "3mo",
-                "prev_vaccine": "A群C群流脑疫苗",
+                "prev_vaccine": "A群流脑疫苗",
             },
             "special_calc": None,
-            "status_override": "mav_dose2",
         },
         # A群C群流脑疫苗
         {
@@ -311,7 +292,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "2y",
             "dependency": None,
             "special_calc": "mac_dose1",
-            "status_override": None,
         },
         {
             "vaccine_name": "A群C群流脑疫苗",
@@ -320,7 +300,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "6y",
             "dependency": {"prev_dose": 1, "min_interval": "3y"},
             "special_calc": None,
-            "status_override": None,
         },
         # 乙脑疫苗
         {
@@ -330,7 +309,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "8mo",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "乙脑疫苗",
@@ -339,7 +317,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "2y",
             "dependency": {"prev_dose": 1, "min_interval": "12mo"},
             "special_calc": None,
-            "status_override": None,
         },
         # 甲肝疫苗
         {
@@ -349,7 +326,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "18mo",
             "dependency": None,
             "special_calc": None,
-            "status_override": None,
         },
         {
             "vaccine_name": "甲肝疫苗",
@@ -358,7 +334,6 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "2y",
             "dependency": {"prev_dose": 1, "min_interval": "6mo"},
             "special_calc": "hav_inactivated",
-            "status_override": None,
         },
     ]
 
@@ -411,7 +386,7 @@ def _calculate_single_vaccine_recommendation(
         ]
     )
 
-    status_expr = _get_vaccination_status_check(vaccine_category, dose, status_override)
+    status_expr = _get_vaccination_status_check(vaccine_category, dose)
     df = df.with_columns(status_expr.alias("recommended_dates"))
 
     result = df.group_by("id_x").agg(
@@ -501,36 +476,11 @@ def _build_recommended_date_expr(
 
 
 def _get_vaccination_status_check(
-    vaccine_category: str, dose: int, status_override: Optional[str]
+    vaccine_category: str, dose: int
 ) -> pl.Expr:
     """
     生成接种状态校验逻辑
     """
-    if status_override == "mav_dose2":
-        return (
-            pl.when(
-                (pl.col("recommended_seq") == dose)
-                & (pl.col("vaccine_name") == "A群流脑疫苗")
-                & (pl.col("vaccination_seq") == dose)
-                & (pl.col("vaccination_date") > pl.col("recommended_dates"))
-            )
-            .then(pl.col("recommended_dates"))
-            .when(
-                (pl.col("recommended_seq") == dose)
-                & (pl.col("vaccine_name") == "A群流脑疫苗")
-                & (pl.col("vaccination_seq") == dose - 1)
-            )
-            .then(pl.col("recommended_dates"))
-            .when(
-                (pl.col("recommended_seq") == dose)
-                & (pl.col("vaccine_name") == "A群C群流脑疫苗")
-                & (pl.col("vaccination_seq") == 1)
-                & (pl.col("vacc_month") < 6)
-            )
-            .then(pl.col("recommended_dates"))
-            .otherwise(None)
-        )
-
     if dose == 1:
         return (
             pl.when(
