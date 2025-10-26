@@ -192,7 +192,7 @@ def calculate_MAV_expected_2(recommendations: pl.DataFrame, person: pl.DataFrame
                     (pl.col('vaccine_name') == 'A群流脑疫苗') & 
                     (pl.col("vaccination_date") <= pl.col('mon_end'))
                 )
-                ['id_x']
+                ['id_x'].implode()
             )
         )
         # 排除条件2：第1剂接种A群C群流脑疫苗时vacc_month<6，且已接种3剂次A群C群流脑疫苗的人群
@@ -214,7 +214,7 @@ def calculate_MAV_expected_2(recommendations: pl.DataFrame, person: pl.DataFrame
                     on='id_x',
                     how='inner'
                 )
-                ['id_x']
+                ['id_x'].implode()
             )
         )
         # 排除条件3：第1剂接种A群C群流脑疫苗时vacc_month>=6，且已接种2剂次A群C群流脑疫苗的人群
@@ -236,7 +236,7 @@ def calculate_MAV_expected_2(recommendations: pl.DataFrame, person: pl.DataFrame
                     on='id_x',
                     how='inner'
                 )
-                ['id_x']
+                ['id_x'].implode()
             )
         )
         # 筛选条件：接种过第1剂且vacc_month<24的人群
@@ -252,7 +252,7 @@ def calculate_MAV_expected_2(recommendations: pl.DataFrame, person: pl.DataFrame
                     ) &
                     (pl.col("vaccination_date") <= pl.col('mon_end'))
                 )
-                ['id_x']
+                ['id_x'].implode()
             )
         )
         # 筛选推荐序列和疫苗类型
@@ -265,7 +265,6 @@ def calculate_MAV_expected_2(recommendations: pl.DataFrame, person: pl.DataFrame
             (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
             (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y"))
         )
-        # ===== 关键修改：添加分组聚合，生成exp列 =====
         .group_by(['current_management_code', 'recommended_vacc', 'recommended_seq'])
         .agg(pl.col('id_x').n_unique().alias('exp'))
     )
