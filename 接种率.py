@@ -739,12 +739,12 @@ recommendations_MAV_1 = (
     ])
     .with_columns(
         pl.when(
-            (pl.col('recommended_seq') == 1) & (pl.col("大类名称") == 'A群流脑疫苗') &
+            (pl.col('recommended_seq') == 1) & (pl.col("vaccine_name") == 'A群流脑疫苗') &
             (pl.col('vaccination_seq') == 1) &
             (pl.col('vaccination_date') > pl.col('recommended_dates'))
         )
         .then(pl.col('recommended_dates'))
-        .when(~(pl.col("大类名称").is_in(['A群流脑疫苗'])))
+        .when(~(pl.col("vaccine_name").is_in(['A群流脑疫苗'])))
         .then(pl.col('recommended_dates'))
         .otherwise(None)
     )
