@@ -119,6 +119,7 @@ def _apply_mav_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
                 (pl.col("vaccine_name") == 'A群C群流脑疫苗')
                 & (pl.col('vaccination_seq') == 1)
                 & (pl.col('vacc_month') < 24)
+                & (pl.col('vaccination_date')<=pl.col('mon_end'))
             )
             .any()
             .over("id_x")

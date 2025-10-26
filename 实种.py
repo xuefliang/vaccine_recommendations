@@ -333,7 +333,7 @@ if __name__ == "__main__":
     # 计算所有疫苗的接种率
     all_vaccine_coverage = calculate_all_vaccines_coverage(person, recommendations)
 
-tmp=(
+temp=(
         all_vaccine_coverage
         .filter(pl.col('接种单位')==392423210604)
     )
