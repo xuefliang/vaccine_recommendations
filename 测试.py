@@ -1,425 +1,242 @@
-recommendations_MAV_2_p1 = (
-    person
-    .with_columns(
-        pl.when(
-            (pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群流脑疫苗')
-        )
-        .then(
-            pl.max_horizontal([
-                pl.col("birth_date").dt.offset_by("9mo"),
-                pl.col("vaccination_date").dt.offset_by("3mo")
-            ])
-        )
-        .otherwise(None)
-        .alias("recommended_dates"),
-        pl.lit('A群流脑疫苗').alias("recommended_vacc"),
-        pl.lit(2).alias('recommended_seq')
-    )
-    .with_columns(
-        # 判断是否显示推荐
-        show_recommendation=(
-            (pl.col("vaccine_name") == 'A群流脑疫苗') &
-            (
-                (pl.col('vaccination_seq') == 1) |  # 未种第二针
-                (  # 或已种但延迟
-                    (pl.col('vaccination_seq') == 2) &
-                    (pl.col('vaccination_date') > pl.col('recommended_dates'))
-                )
-            )
-        )
-    )
-    .filter(pl.col('show_recommendation'))
-    .drop('show_recommendation')
-)
+import polars as pl
 
-recommendations_MAV_2_p2 = (
-    person
-    .with_columns(
-        # 推荐日期
-        recommended_dates=pl.when(
-            (pl.col("vaccination_seq") == 1) & 
-            (pl.col("vaccine_name") == 'A群C群流脑疫苗') & 
-            (pl.col('vacc_month') < 24)
-        ).then(pl.col("vaccination_date").dt.offset_by("3mo")),
-        
-        recommended_vacc=pl.lit('A群流脑疫苗'),
-        recommended_seq=pl.lit(2),
-    )
-    .with_columns(
-        # 判断是否需要显示（第二针未种或延迟接种）
-        show_recommendation=(
-            (pl.col("vaccine_name") == 'A群C群流脑疫苗') &
-            (
-                (pl.col('vaccination_seq') == 1) |  # 未种第二针
-                (  # 或已种但延迟
-                    (pl.col('vaccination_seq') == pl.when(pl.col('vacc_month') < 6).then(3).otherwise(2)) &
-                    (pl.col('vaccination_date') > pl.col('recommended_dates'))
-                )
-            )
-        )
-    )
-    .filter(pl.col('show_recommendation'))  # 只保留需要推荐的记录
-    .drop('show_recommendation')
-)
-
-
-recommendations=(
-    pl.concat([recommendations_MAV_2_p1,recommendations_MAV_2_p2])
-    .group_by("id_x").agg(
-        [
-            pl.col("recommended_dates").drop_nulls().first().alias("recommended_dates"),
-            pl.col("recommended_vacc").first().alias("recommended_vacc"),
-            pl.col("recommended_seq").first().alias("recommended_seq"),
-            pl.col("birth_date").first().alias("birth_date"),
-            pl.col("age").first().alias("age"),
-            pl.col("age_month").first().alias("age_month"),
-            pl.col("entry_org").first().alias("entry_org"),
-            pl.col("entry_date").first().alias("entry_date"),
-            pl.col("vaccination_org").first().alias("vaccination_org"),
-            pl.col("current_management_code").first().alias("current_management_code"),
-        ]
-    )
-)
-
-
-recommendations_MAV_1 = (
+recommendations_MAC_1 = (
     person
     .with_columns([
-        pl.col("birth_date").dt.offset_by("6mo").alias("recommended_dates"),
-        pl.lit('A群流脑疫苗').alias("recommended_vacc"),
+        # 为每个人标记A群流脑疫苗免疫剂次数
+        ((pl.col("vaccine_name") == 'A群流脑疫苗') & (pl.col("age") >= 2)).sum().over("id_x").alias("his_ma"),
+        # A群C群流脑疫苗 - 24月龄及以后的接种次数
+        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col("vacc_month") >=24) & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("his_mac"),
+        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col("vacc_month") <24) & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("his_mac_before")
+    ])
+    .filter(
+        # 合并三个条件
+        ((pl.col('his_ma') == 2) & (pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))) |
+        ((pl.col('his_ma') == 1) & (pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))) |
+        (pl.col('his_ma') == 0)
+    )
+    .with_columns([
+        # 根据his_ma值设置不同的recommended_dates
+        pl.when((pl.col('his_ma') == 2) & (pl.col('his_mac') == 0))
+        .then(pl.col("birth_date").dt.offset_by("3y"))
+        .when((pl.col('his_ma') < 2) & (pl.col('his_mac') == 1))
+        .then((pl.col("birth_date").dt.offset_by("3y")))
+        .when((pl.col('his_ma') == 0) & (pl.col('his_mac')==0) & (pl.col('his_mac_before')==0))
+        .then((pl.col("birth_date").dt.offset_by("2y")))
+        .when((pl.col('his_ma') == 0) & (pl.col('his_mac')==0) & (pl.col('his_mac_before')>=2))
+        .then((pl.col("birth_date").dt.offset_by("3y")))
+        .when((pl.col('his_ma') == 0) & (pl.col('his_mac')==0) & (pl.col('his_mac_before')==1))
+        .then((pl.col("birth_date").dt.offset_by("2y")))
+        .when((pl.col('his_ma') == 1) & (pl.col('his_mac')==0) & (pl.col('his_mac_before')==0) & (pl.col('vaccine_name')=='A群流脑疫苗'))
+        .then(pl.max_horizontal([
+            pl.col("birth_date").dt.offset_by("2y"),
+            pl.col("vaccination_date").dt.offset_by("3mo")]))
+        .alias("recommended_dates"),
+        
+        pl.lit('A群C群流脑疫苗').alias("recommended_vacc"),
         pl.lit(1).alias('recommended_seq')
     ])
     .with_columns(
+        pl.when((pl.col('his_mac')==1))
+        .then(None)
+        .otherwise(pl.col("recommended_dates"))
+        .alias("recommended_dates")
+    )
+    .with_columns(
+        pl.when((pl.col('his_ma') == 2) & (pl.col('his_mac') == 0) & (pl.col('his_mac_before') == 0) & (pl.col('vaccine_name')=='A群C群流脑疫苗') & (pl.col('vacc_month')>=24))
+        .then(None)
+        .otherwise(pl.col("recommended_dates"))
+        .alias("recommended_dates")
+    )
+    .with_columns(
         pl.when(
-            (pl.col('recommended_seq') == 1) & 
-            (pl.col("vaccine_name") == 'A群流脑疫苗') &
+            (pl.col('recommended_seq') == 1) & (pl.col("vaccine_name") == 'A群C群流脑疫苗') &
             (pl.col('vaccination_seq') == 1) &
             (pl.col('vaccination_date') > pl.col('recommended_dates'))
         )
         .then(pl.col('recommended_dates'))
-        .when(~pl.col("vaccine_name").is_in(['A群流脑疫苗']))
+        .when(~(pl.col("vaccine_name").is_in(['A群C群流脑疫苗'])))
         .then(pl.col('recommended_dates'))
         .otherwise(None)
     )
+    .filter(pl.col.current_management_code==392423210604)
+    .filter(pl.col.recommended_vacc=='A群C群流脑疫苗')
+    .filter(pl.col.recommended_seq==1)
     .filter(
-        ~(
-            (pl.col('recommended_seq') == 1) & 
-            (pl.col("vaccine_name") == 'A群C群流脑疫苗') &
-            (pl.col('vaccination_seq') == 1) & 
-            (pl.col('vacc_month') < 24)
+            (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
+            (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y")))
+
+)
+
+recommendations_MAC_2 = (
+    person
+    .with_columns([
+        # 为每个人标记A群流脑疫苗免疫剂次数
+        ((pl.col("vaccine_name") == 'A群流脑疫苗') & (pl.col("age") >= 2)).sum().over("id_x").alias("his_ma"),
+        # A群C群流脑疫苗 - 24月龄及以后的接种次数
+        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col("vacc_month") >=24) & (pl.col("vacc_month") <60) & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("his_mac"),
+        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col("vacc_month") >=60) & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("his_mac_5"),
+        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("ac_max_seq")
+    ])
+    .with_columns(
+        pl.when((pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col('his_mac')==1)  & (pl.col('his_mac_5')==0))
+        .then(
+            pl.max_horizontal([
+                pl.col("birth_date").dt.offset_by("6y"),
+                pl.col("vaccination_date").dt.offset_by("3y")
+            ])
         )
+        .when((pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col('his_mac_5')==1) & (pl.col('his_mac')==0) & (pl.col('vaccination_seq')==pl.col('ac_max_seq')))
+        .then(
+            pl.max_horizontal([
+                pl.col("birth_date").dt.offset_by("6y"),
+                pl.col("vaccination_date").dt.offset_by("3y")
+            ])
+        )
+        .otherwise(None)
+        .alias("recommended_dates"),
+        pl.lit('A群C群流脑疫苗').alias("recommended_vacc"),
+        pl.lit(2).alias('recommended_seq')
     )
-)
-
-tmp=(
-    pl.read_excel('/mnt/c/Users/Administrator/Downloads/新建 Microsoft Excel 工作表.xlsx')
-)
-
-tmp2=(
-    recommendations
-    .filter(pl.col.id_x.is_in(tmp['A'].implode()))
-    .filter(pl.col.recommended_vacc=='A群流脑疫苗')
+    .filter(pl.col.current_management_code==392423210604)
+    .filter(pl.col.recommended_vacc=='A群C群流脑疫苗')
     .filter(pl.col.recommended_seq==2)
+    .filter(
+            (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
+            (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y")))
 )
 
-tmp3=(
-    tmp
-    .filter(~pl.col.A.is_in(tmp2["id_x"].implode()))
-)
-
-tmp4=(
+tmp6=(
     person
-    .filter(pl.col.id_x.is_in(tmp3["A"].implode()))
+    .filter(pl.col.id_x=='02c9b8c9efb44c48b04961665f7d5a53')
+    .with_columns([
+        # 为每个人标记A群流脑疫苗免疫剂次数
+        ((pl.col("vaccine_name") == 'A群流脑疫苗') & (pl.col("age") >= 2)).sum().over("id_x").alias("his_ma"),
+        # A群C群流脑疫苗 - 24月龄前的接种次数
+        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & 
+         (pl.col("vacc_month") < 24) & 
+         (pl.col('vaccination_date') <= pl.col('mon_end'))).sum().over("id_x").alias("his_mac_before24"),
+        # A群C群流脑疫苗 - 24月龄及以后的接种次数
+        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & 
+         (pl.col("vacc_month") >= 24) & 
+         (pl.col('vaccination_date') <= pl.col('mon_end'))).sum().over("id_x").alias("his_mac_after24")
+    ])
 )
 
-tmp5=(
+
+temp=(
     recommendations
-    .filter(pl.col.id_x=='e652b8b3c3a64d99b47c59332a82b183')
-)
-
-MAV_actual_2_p1=(
-    person
-    .filter((pl.col('age_month')<2*12) & (pl.col('vaccination_seq')==2))
-    .filter(pl.col('vaccine_name')=='A群流脑疫苗')
-    .filter((pl.col('vaccination_date')>=pl.col('mon_start')) & (pl.col('vaccination_date')<=pl.col('mon_end')))
-    .group_by(['vaccination_org', 'vaccine_name','vaccination_seq'])
-    .agg(pl.col('id_x').n_unique().alias('vac'))
-)
-
-MAV_actual_2_p2 = (
-    person
-    .filter((pl.col('age_month') < 2*12))
+    .filter(pl.col.current_management_code==392423210604)
+    .filter(pl.col.recommended_vacc=='A群C群流脑疫苗')
+    .filter(pl.col.recommended_seq==2)
     .filter(
-        (pl.col('vaccine_name') == 'A群C群流脑疫苗') & 
-        (pl.col('vaccination_seq') == 1) & 
-        (pl.col('vacc_month') < 6)
-    )
-    .select('id_x')
-    .unique()
-    .join(
-        person.filter(
-            (pl.col('vaccine_name') == 'A群C群流脑疫苗') & 
-            (pl.col('vaccination_seq') == 3) &
-            (pl.col('vaccination_date') >= pl.col('mon_start')) & 
-            (pl.col('vaccination_date') <= pl.col('mon_end'))
-        ),
-        on='id_x',
-        how='inner'
-    )
-    .group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq'])
-    .agg(pl.col('id_x').n_unique().alias('vac'))
-)
-
-MAV_actual_2_p3=(
-    person
-    .filter((pl.col('age_month') < 2*12))
-    .filter(
-        (pl.col('vaccine_name') == 'A群C群流脑疫苗') & 
-        (pl.col('vaccination_seq') == 1) & 
-        (pl.col('vacc_month') >= 6)
-    )
-    .select('id_x')
-    .unique()
-    .join(
-        person.filter(
-            (pl.col('vaccine_name') == 'A群C群流脑疫苗') & 
-            (pl.col('vaccination_seq') == 2) &
-            (pl.col('vaccination_date') >= pl.col('mon_start')) & 
-            (pl.col('vaccination_date') <= pl.col('mon_end'))
-        ),
-        on='id_x',
-        how='inner'
-    )
-    .group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq'])
-    .agg(pl.col('id_x').n_unique().alias('vac'))
-)
-
-# 预先筛选基础数据
-base_person = person.filter(pl.col('age_month') < 2*12)
-
-# 符合条件的id集合
-eligible_ids_p2 = (
-    base_person
-    .filter(
-        (pl.col('vaccine_name') == 'A群C群流脑疫苗') & 
-        (pl.col('vaccination_seq') == 1) & 
-        (pl.col('vacc_month') < 6)
-    )
-    .select('id_x')
-    .unique()
-)
-
-eligible_ids_p3 = (
-    base_person
-    .filter(
-        (pl.col('vaccine_name') == 'A群C群流脑疫苗') & 
-        (pl.col('vaccination_seq') == 1) & 
-        (pl.col('vacc_month') >= 6)
-    )
-    .select('id_x')
-    .unique()
-)
-
-# 合并结果
-MAV_actual_2 = pl.concat([
-    # p1: A群流脑疫苗 第2剂
-    base_person
-    .filter(
-        (pl.col('vaccination_seq') == 2) &
-        (pl.col('vaccine_name') == 'A群流脑疫苗') &
-        (pl.col('vaccination_date').is_between(pl.col('mon_start'), pl.col('mon_end')))
-    )
-    .group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq'])
-    .agg(pl.col('id_x').n_unique().alias('vac')),
-    
-    # p2: A群C群流脑疫苗 第3剂 -> 统计为 A群流脑疫苗
-    eligible_ids_p2.join(
-        base_person.filter(
-            (pl.col('vaccine_name') == 'A群C群流脑疫苗') & 
-            (pl.col('vaccination_seq') == 3) &
-            (pl.col('vaccination_date').is_between(pl.col('mon_start'), pl.col('mon_end')))
-        ),
-        on='id_x',
-        how='inner'
-    )
-    .with_columns(pl.lit('A群流脑疫苗').alias('vaccine_name'))
-    .group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq'])
-    .agg(pl.col('id_x').n_unique().alias('vac')),
-    
-    # p3: A群C群流脑疫苗 第2剂 -> 统计为 A群流脑疫苗
-    eligible_ids_p3.join(
-        base_person.filter(
-            (pl.col('vaccine_name') == 'A群C群流脑疫苗') & 
-            (pl.col('vaccination_seq') == 2) &
-            (pl.col('vaccination_date').is_between(pl.col('mon_start'), pl.col('mon_end')))
-        ),
-        on='id_x',
-        how='inner'
-    )
-    .with_columns(pl.lit('A群流脑疫苗').alias('vaccine_name'))
-    .group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq'])
-    .agg(pl.col('id_x').n_unique().alias('vac'))
-]).group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq']).agg(
-    pl.col('vac').sum().alias('vac')
-)
-
-
-
-#应种当月-1y，按管理单位
-MAV_expected_2=(
-    recommendations
-    .filter(
-        ~pl.col('id_x').is_in(
-            person
-            .filter(
-                (pl.col('vaccination_seq') == 2) & 
-                (pl.col('vaccine_name') == 'A群流脑疫苗') & 
-                (pl.col("vaccination_date") <= pl.col('mon_end'))
-            )
-            ['id_x'].implode()
-        )
-    )
-    .filter(
-        pl.col('id_x').is_in(
-            person
-            .filter(
-                (pl.col('vaccination_seq') == 1) & (pl.col('vacc_month')<24) &
-                (
-                    (pl.col('vaccine_name') == 'A群流脑疫苗') |
-                    (pl.col('vaccine_name') == 'A群C群流脑疫苗')
-                ) &
-                (
-                    (pl.col("vaccination_date") <= pl.col('mon_end'))
-                )
-            )
-            ['id_x'].implode()
-        )
-    )
-    .filter(
-        (pl.col('recommended_seq') == 2) & 
-        (pl.col('recommended_vacc') == 'A群流脑疫苗')
-    )
-    .filter(
-        (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
-        (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y"))
-    )
-)
-
-
-
-tmp=(
-    pl.read_excel('/mnt/c/Users/Administrator/Downloads/新建 Microsoft Excel 工作表.xlsx')
+            (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
+            (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y")))
+    .filter(pl.col.id_x.is_unique())
 )
 
 tmp1=(
-    MAV_expected_2
-    .filter(pl.col.current_management_code==392423210604)
+    pl.read_excel('/mnt/c/Users/Administrator/Downloads/新建 Microsoft Excel 工作表.xlsx')
 )
 
 tmp2=(
-    tmp1
-    .filter(~pl.col.id_x.is_in(tmp['A'].implode()))
+    tmp1.filter(~pl.col.A.is_in(temp['id_x'].implode()))
 )
 
 tmp3=(
-    recommendations
-    .filter(pl.col.id_x.is_in(tmp2['A'].implode()))
-    .filter(pl.col.recommended_vacc=='A群流脑疫苗')
+    person
+    .filter(pl.col.id_x=='660d468897da4961b018298a8334fa80')
+    .filter(pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))
 )
 
 tmp4=(
-    MAV_expected_2
-    .filter(pl.col.id_x=='db5f286fd316458b9cd091f22f46489b')
+    temp
+    .filter(~pl.col.id_x.is_in(tmp1['A'].implode()))    
+)
+
+# AC1实种
+AC1_actual=(
+    person
+    .with_columns(
+        ((pl.col('age_month') < 18*12) & 
+        (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+        (pl.col('vacc_month')>24)).sum().over('id_x').alias("his_mac")
+    )
+    .filter(
+        (pl.col('his_mac')==1) & (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+        (pl.col('vaccination_date').dt.date() >= pl.col('mon_start')) & 
+        (pl.col('vaccination_date').dt.date() <= pl.col('mon_end')))
+    .filter(pl.col.vaccination_org==392423210604)
+    .filter(pl.col.id_x.is_unique())
+)
+
+# AC1应种
+AC1_expect=(
+    recommendations
+    .filter(pl.col.current_management_code==392423210604)
+    .filter(pl.col.recommended_vacc=='A群C群流脑疫苗')
+    .filter(pl.col.recommended_seq==1)
+    .filter(
+            (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
+            (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y")))
+    .filter(pl.col.id_x.is_unique())
+)
+
+# AC2实种
+AC2_actual=(
+    person
+    .with_columns(
+        ((pl.col('age_month') < 18*12) & 
+        (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+        (pl.col('vacc_month')>=24)).sum().over('id_x').alias("his_mac"),
+        ((pl.col('age_month') < 18*12) & 
+        (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+        (pl.col('vacc_month')>60)).sum().over('id_x').alias("his_mac_60")
+    )
+    .filter(
+        (pl.col('his_mac')==2) & (pl.col('his_mac_60')>=1) & (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+        (pl.col('vaccination_date').dt.date() >= pl.col('mon_start')) & 
+        (pl.col('vaccination_date').dt.date() <= pl.col('mon_end')))
+    .filter(pl.col.vaccination_org==392423210604)
+    .filter(pl.col.id_x.is_unique())
+)
+
+# AC2应种
+AC2_expect=(
+    recommendations
+    .filter(pl.col.current_management_code==392423210604)
+    .filter(pl.col.recommended_vacc=='A群C群流脑疫苗')
+    .filter(pl.col.recommended_seq==2)
+    .filter(
+            (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
+            (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y")))
+    .filter(pl.col.id_x.is_unique())
+)
+
+
+tmp2=(
+    AC2_actual
+    .filter(
+        ~pl.col.id_x.is_in(tmp1['A'].implode())
+    )
+)
+
+tmp3=(
+    tmp1
+    .filter(
+        ~pl.col.A.is_in(AC1_actual['id_x'].implode())
+    )
+)
+
+
+tmp4=(
+    person
+    .filter(pl.col.id_x.is_in(tmp2['id_x'].implode()))
+    .filter(pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))
 )
 
 tmp5=(
     person
-    .filter(pl.col.id_x=='db5f286fd316458b9cd091f22f46489b')
-)
-
-
-MAV_expected_2 = (
-    recommendations
-    # 排除条件1：已接种第2剂A群流脑疫苗的人群
-    .filter(
-        ~pl.col('id_x').is_in(
-            person
-            .filter(
-                (pl.col('vaccination_seq') == 2) & 
-                (pl.col('vaccine_name') == 'A群流脑疫苗') & 
-                (pl.col("vaccination_date") <= pl.col('mon_end'))
-            )
-            ['id_x'].implode()
-        )
-    )
-    # 排除条件2：第1剂接种A群C群流脑疫苗时vacc_month<6，且已接种3剂次A群C群流脑疫苗的人群
-    .filter(
-        ~pl.col('id_x').is_in(
-            person
-            .filter(
-                (pl.col('vaccination_seq') == 1) &
-                (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
-                (pl.col('vacc_month') < 6)
-            )
-            .select('id_x')
-            .join(
-                person.filter(
-                    (pl.col('vaccination_seq') == 3) &
-                    (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
-                    (pl.col("vaccination_date") <= pl.col('mon_end'))
-                ).select('id_x'),
-                on='id_x',
-                how='inner'
-            )
-            ['id_x'].implode()
-        )
-    )
-    # 排除条件3：第1剂接种A群C群流脑疫苗时vacc_month>=6，且已接种2剂次A群C群流脑疫苗的人群
-    .filter(
-        ~pl.col('id_x').is_in(
-            person
-            .filter(
-                (pl.col('vaccination_seq') == 1) &
-                (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
-                (pl.col('vacc_month') >= 6)
-            )
-            .select('id_x')
-            .join(
-                person.filter(
-                    (pl.col('vaccination_seq') == 2) &
-                    (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
-                    (pl.col("vaccination_date") <= pl.col('mon_end'))
-                ).select('id_x'),
-                on='id_x',
-                how='inner'
-            )
-            ['id_x'].implode()
-        )
-    )
-    # 筛选条件：接种过第1剂且vacc_month<24的人群
-    .filter(
-        pl.col('id_x').is_in(
-            person
-            .filter(
-                (pl.col('vaccination_seq') == 1) & 
-                (pl.col('vacc_month') < 24) &
-                (
-                    (pl.col('vaccine_name') == 'A群流脑疫苗') |
-                    (pl.col('vaccine_name') == 'A群C群流脑疫苗')
-                ) &
-                (pl.col("vaccination_date") <= pl.col('mon_end'))
-            )
-            ['id_x'].implode()
-        )
-    )
-    # 筛选推荐序列和疫苗类型
-    .filter(
-        (pl.col('recommended_seq') == 2) & 
-        (pl.col('recommended_vacc') == 'A群流脑疫苗')
-    )
-    # 筛选推荐日期范围
-    .filter(
-        (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
-        (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y"))
-    )
+    .filter(pl.col.id_x.is_in(tmp3['A'].implode()))
+    .filter(pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))
 )

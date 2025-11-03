@@ -48,6 +48,114 @@ VACCINE_CONFIGS = {
     ]
 }
 
+def calculate_MAC_actual_1(person: pl.DataFrame) -> pl.DataFrame:
+    """
+    计算A群C群流脑疫苗第1针的实种人数（特殊逻辑）
+    
+    逻辑：
+    - 筛选18岁以下、疫苗名称为A群C群流脑疫苗、接种月龄>24的历史记录
+    - 统计每个人符合条件的接种次数，只保留恰好1次的人
+    - 筛选在时间范围内的接种记录
+    """
+    return (
+        person
+        .with_columns(
+            ((pl.col('age_month') < 18*12) & 
+             (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+             (pl.col('vacc_month') > 24))
+            .sum()
+            .over('id_x')
+            .alias("his_mac")
+        )
+        .filter(
+            (pl.col('his_mac') == 1) & 
+            (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+            (pl.col('vaccination_date').dt.date() >= pl.col('mon_start')) & 
+            (pl.col('vaccination_date').dt.date() <= pl.col('mon_end'))
+        )
+        .group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq'])
+        .agg(pl.col('id_x').n_unique().alias('vac'))
+    )
+
+def calculate_MAC_expected_1(recommendations: pl.DataFrame) -> pl.DataFrame:
+    """
+    计算A群C群流脑疫苗第1针的应种人数（特殊逻辑）
+    
+    逻辑：
+    - 筛选推荐疫苗为A群C群流脑疫苗、推荐序号为1
+    - 推荐日期在当月-1年到当月范围内
+    """
+    return (
+        recommendations
+        .filter(pl.col('recommended_vacc') == 'A群C群流脑疫苗')
+        .filter(pl.col('recommended_seq') == 1)
+        .filter(
+            (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
+            (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y"))
+        )
+        .group_by(['current_management_code', 'recommended_vacc', 'recommended_seq'])
+        .agg(pl.col('id_x').n_unique().alias('exp'))
+    )
+
+def calculate_MAC_actual_2(person: pl.DataFrame) -> pl.DataFrame:
+    """
+    计算A群C群流脑疫苗第2针的实种人数（特殊逻辑）
+    
+    逻辑：
+    - 筛选18岁以下的历史记录
+    - 统计接种月龄>=24的A群C群流脑疫苗次数（his_mac），必须=2
+    - 统计接种月龄>60的A群C群流脑疫苗次数（his_mac_60），必须>=1
+    - 筛选在时间范围内的接种记录
+    """
+    return (
+        person
+        .with_columns([
+            ((pl.col('age_month') < 18*12) & 
+             (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+             (pl.col('vacc_month') >= 24))
+            .sum()
+            .over('id_x')
+            .alias("his_mac"),
+            
+            ((pl.col('age_month') < 18*12) & 
+             (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+             (pl.col('vacc_month') > 60))
+            .sum()
+            .over('id_x')
+            .alias("his_mac_60")
+        ])
+        .filter(
+            (pl.col('his_mac') == 2) & 
+            (pl.col('his_mac_60') >= 1) & 
+            (pl.col('vaccine_name') == 'A群C群流脑疫苗') &
+            (pl.col('vaccination_date').dt.date() >= pl.col('mon_start')) & 
+            (pl.col('vaccination_date').dt.date() <= pl.col('mon_end'))
+        )
+        .group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq'])
+        .agg(pl.col('id_x').n_unique().alias('vac'))
+    )
+
+def calculate_MAC_expected_2(recommendations: pl.DataFrame) -> pl.DataFrame:
+    """
+    计算A群C群流脑疫苗第2针的应种人数（特殊逻辑）
+    
+    逻辑：
+    - 筛选推荐疫苗为A群C群流脑疫苗、推荐序号为2
+    - 推荐日期在当月-1年到当月范围内
+    - 对id_x去重（保留唯一）
+    """
+    return (
+        recommendations
+        .filter(pl.col('recommended_vacc') == 'A群C群流脑疫苗')
+        .filter(pl.col('recommended_seq') == 2)
+        .filter(
+            (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
+            (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y"))
+        )
+        .unique(subset=['id_x'])
+        .group_by(['current_management_code', 'recommended_vacc', 'recommended_seq'])
+        .agg(pl.col('id_x').n_unique().alias('exp'))
+    )
 
 def calculate_MAV_actual_2(person: pl.DataFrame) -> pl.DataFrame:
     """
@@ -295,8 +403,8 @@ def calculate_actual_vaccination(
             (pl.col('age_month') < max_age_months) & 
             (pl.col('vaccination_seq') == seq) &
             (pl.col('vaccine_name') == vaccine_name) &
-            (pl.col('vaccination_date') >= pl.col('mon_start')) & 
-            (pl.col('vaccination_date') <= pl.col('mon_end'))
+            (pl.col('vaccination_date').dt.date() >= pl.col('mon_start')) & 
+            (pl.col('vaccination_date').dt.date() <= pl.col('mon_end'))
         )
         .group_by(['vaccination_org', 'vaccine_name', 'vaccination_seq'])
         .agg(pl.col('id_x').n_unique().alias('vac'))
@@ -495,6 +603,18 @@ def calculate_vaccine_coverage_for_all_doses(
                 actual = calculate_MAV_actual_2(person)
                 expected = calculate_MAV_expected_2(recommendations, person)
                 print(f"  实种记录数: {actual.height}, 应种记录数: {expected.height}")
+            # A群C群流脑疫苗第1针使用特殊逻辑
+            elif vaccine_name == 'A群C群流脑疫苗' and seq == 1:
+                print(f"  使用特殊逻辑计算 {vaccine_name} 第{seq}剂...")
+                actual = calculate_MAC_actual_1(person)
+                expected = calculate_MAC_expected_1(recommendations)
+                print(f"  实种记录数: {actual.height}, 应种记录数: {expected.height}")
+            # A群C群流脑疫苗第2针使用特殊逻辑
+            elif vaccine_name == 'A群C群流脑疫苗' and seq == 2:
+                print(f"  使用特殊逻辑计算 {vaccine_name} 第{seq}剂...")
+                actual = calculate_MAC_actual_2(person)
+                expected = calculate_MAC_expected_2(recommendations)
+                print(f"  实种记录数: {actual.height}, 应种记录数: {expected.height}")
             else:
                 # 计算实种
                 actual = calculate_actual_vaccination(person, vaccine_name, seq, actual_max_age)
@@ -589,10 +709,8 @@ if __name__ == "__main__":
     # 计算所有疫苗的接种率
     all_vaccine_coverage = calculate_all_vaccines_coverage(person, recommendations)
     
-
-    
     # 查看特定接种单位的数据
     tmp = (
         all_vaccine_coverage
-        .filter(pl.col('接种单位') == 392423210604)
+        .filter(pl.col('接种单位') == 333647265032)
     )
