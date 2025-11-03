@@ -6,7 +6,7 @@ def load_and_process_person_data(
     file_path: str,
     cutoff_date: str,
     vaccine_tbl: pl.DataFrame,
-    replacement_org: int = 777777777777,
+    replacement_org: str = "777777777777",
     target_vaccines: Optional[list] = None
 ) -> pl.DataFrame:
     """
@@ -30,7 +30,10 @@ def load_and_process_person_data(
         "vaccination_code": pl.String,
         "birth_date": pl.Datetime,
         "vaccination_date": pl.Datetime,
-        "hepatitis_mothers": pl.String
+        "hepatitis_mothers": pl.String,
+        "current_management_code":pl.String,
+        "vaccination_org": pl.String,
+        "entry_org": pl.String
     }
     
     person = (
@@ -124,7 +127,7 @@ def _add_vaccination_sequence(df: pl.DataFrame) -> pl.DataFrame:
 
 def _fix_vaccination_org(
     df: pl.DataFrame,
-    replacement_org: int,
+    replacement_org: str,
     target_vaccines: list
 ) -> pl.DataFrame:
     """修正特定条件下的接种机构代码"""

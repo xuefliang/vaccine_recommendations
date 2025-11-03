@@ -692,8 +692,7 @@ def _get_vaccination_status_check(
 # 公共接口
 # ----------------------------------------------------------------------
 
-
-def get_consolidated_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
+def get_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
     """
     获取全部疫苗推荐结果并合并
     """
@@ -712,7 +711,7 @@ def get_recommendations_by_vaccine(
     """
     获取特定疫苗的推荐结果
     """
-    return get_consolidated_vaccine_recommendations(person).filter(
+    return get_vaccine_recommendations(person).filter(
         pl.col("recommended_vacc") == vaccine_name
     )
 
@@ -722,7 +721,7 @@ def get_recommendations_by_person(person: pl.DataFrame, person_id: str) -> pl.Da
     获取某个个体的全部推荐结果
     """
     return (
-        get_consolidated_vaccine_recommendations(person)
+        get_vaccine_recommendations(person)
         .filter(pl.col("id_x") == person_id)
         .sort("recommended_dates")
     )
