@@ -645,7 +645,7 @@ def calculate_vaccine_coverage_for_all_doses(
     return coverage_list
 
 
-def calculate_all_vaccines_coverage(
+def period_vaccination_coverage(
     person: pl.DataFrame,
     recommendations: pl.DataFrame,
     vaccine_configs: dict = VACCINE_CONFIGS
@@ -702,15 +702,3 @@ def calculate_all_vaccines_coverage(
     else:
         print("警告: 没有计算出任何接种率数据")
         return pl.DataFrame()
-
-
-# 使用示例
-if __name__ == "__main__":
-    # 计算所有疫苗的接种率
-    all_vaccine_coverage = calculate_all_vaccines_coverage(person, recommendations)
-    
-    # 查看特定接种单位的数据
-    tmp = (
-        all_vaccine_coverage
-        .filter(pl.col('接种单位') == 333647265032)
-    )

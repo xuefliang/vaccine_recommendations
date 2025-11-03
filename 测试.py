@@ -240,3 +240,4 @@ tmp5=(
     .filter(pl.col.id_x.is_in(tmp3['A'].implode()))
     .filter(pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))
 )
+
