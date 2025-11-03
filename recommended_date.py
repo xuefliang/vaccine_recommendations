@@ -1,9 +1,11 @@
 import polars as pl
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 # ----------------------------------------------------------------------
 # 特殊计算处理函数
 # ----------------------------------------------------------------------
+
 
 def _apply_hbv_dose3_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataFrame:
     """
@@ -73,97 +75,187 @@ def _apply_mac_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
     A群C群流脑疫苗第1剂推荐时间
     """
     df = (
-        df
+        df.with_columns(
+            # 为每个人标记A群流脑疫苗免疫剂次数
+            ((pl.col("vaccine_name") == "A群流脑疫苗") & (pl.col("age") >= 2))
+            .sum()
+            .over("id_x")
+            .alias("his_ma"),
+            # A群C群流脑疫苗 - 24月龄及以后的接种次数
+            (
+                (pl.col("vaccine_name") == "A群C群流脑疫苗")
+                & (pl.col("vacc_month") >= 24)
+                & (pl.col("vaccination_date") <= pl.col("mon_end"))
+            )
+            .sum()
+            .over("id_x")
+            .alias("his_mac"),
+            (
+                (pl.col("vaccine_name") == "A群C群流脑疫苗")
+                & (pl.col("vacc_month") < 24)
+                & (pl.col("vaccination_date") <= pl.col("mon_end"))
+            )
+            .sum()
+            .over("id_x")
+            .alias("his_mac_before"),
+        )
+        .filter(  # 合并三个条件
+            (
+                (pl.col("his_ma") == 2)
+                & (pl.col("vaccine_name").is_in(["A群流脑疫苗", "A群C群流脑疫苗"]))
+            )
+            | (
+                (pl.col("his_ma") == 1)
+                & (pl.col("vaccine_name").is_in(["A群流脑疫苗", "A群C群流脑疫苗"]))
+            )
+            | (pl.col("his_ma") == 0)
+        )
         .with_columns(
-        # 为每个人标记A群流脑疫苗免疫剂次数
-        ((pl.col("vaccine_name") == 'A群流脑疫苗') & (pl.col("age") >= 2)).sum().over("id_x").alias("his_ma"),
-        # A群C群流脑疫苗 - 24月龄及以后的接种次数
-        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col("vacc_month") >=24) & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("his_mac"),
-        ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col("vacc_month") <24) & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("his_mac_before"))
-        .filter(# 合并三个条件
-        ((pl.col('his_ma') == 2) & (pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))) |
-        ((pl.col('his_ma') == 1) & (pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))) |
-        (pl.col('his_ma') == 0))
-        .with_columns([
-        # 根据his_ma值设置不同的recommended_dates
-        pl.when((pl.col('his_ma') == 2) & (pl.col('his_mac') == 0))
-        .then(pl.col("birth_date").dt.offset_by("3y"))
-        .when((pl.col('his_ma') < 2) & (pl.col('his_mac') == 1))
-        .then((pl.col("birth_date").dt.offset_by("3y")))
-        .when((pl.col('his_ma') == 0) & (pl.col('his_mac')==0) & (pl.col('his_mac_before')==0))
-        .then((pl.col("birth_date").dt.offset_by("2y")))
-        .when((pl.col('his_ma') == 0) & (pl.col('his_mac')==0) & (pl.col('his_mac_before')>=2))
-        .then((pl.col("birth_date").dt.offset_by("3y")))
-        .when((pl.col('his_ma') == 0) & (pl.col('his_mac')==0) & (pl.col('his_mac_before')==1))
-        .then((pl.col("birth_date").dt.offset_by("2y")))
-        .when((pl.col('his_ma') == 1) & (pl.col('his_mac')==0) & (pl.col('his_mac_before')==0) & (pl.col('vaccine_name')=='A群流脑疫苗'))
-        .then(pl.max_horizontal([
-            pl.col("birth_date").dt.offset_by("2y"),
-            pl.col("vaccination_date").dt.offset_by("3mo")]))
-        .alias("recommended_dates"),
-        
-        pl.lit('A群C群流脑疫苗').alias("recommended_vacc"),
-        pl.lit(1).alias('recommended_seq')])
-        .with_columns(pl.when((pl.col('his_mac')==1))
+            [
+                # 根据his_ma值设置不同的recommended_dates
+                pl.when((pl.col("his_ma") == 2) & (pl.col("his_mac") == 0))
+                .then(pl.col("birth_date").dt.offset_by("3y"))
+                .when((pl.col("his_ma") < 2) & (pl.col("his_mac") == 1))
+                .then((pl.col("birth_date").dt.offset_by("3y")))
+                .when(
+                    (pl.col("his_ma") == 0)
+                    & (pl.col("his_mac") == 0)
+                    & (pl.col("his_mac_before") == 0)
+                )
+                .then((pl.col("birth_date").dt.offset_by("2y")))
+                .when(
+                    (pl.col("his_ma") == 0)
+                    & (pl.col("his_mac") == 0)
+                    & (pl.col("his_mac_before") >= 2)
+                )
+                .then((pl.col("birth_date").dt.offset_by("3y")))
+                .when(
+                    (pl.col("his_ma") == 0)
+                    & (pl.col("his_mac") == 0)
+                    & (pl.col("his_mac_before") == 1)
+                )
+                .then((pl.col("birth_date").dt.offset_by("2y")))
+                .when(
+                    (pl.col("his_ma") == 1)
+                    & (pl.col("his_mac") == 0)
+                    & (pl.col("his_mac_before") == 0)
+                    & (pl.col("vaccine_name") == "A群流脑疫苗")
+                )
+                .then(
+                    pl.max_horizontal(
+                        [
+                            pl.col("birth_date").dt.offset_by("2y"),
+                            pl.col("vaccination_date").dt.offset_by("3mo"),
+                        ]
+                    )
+                )
+                .alias("recommended_dates"),
+                pl.lit("A群C群流脑疫苗").alias("recommended_vacc"),
+                pl.lit(1).alias("recommended_seq"),
+            ]
+        )
+        .with_columns(
+            pl.when((pl.col("his_mac") == 1))
             .then(None)
             .otherwise(pl.col("recommended_dates"))
-            .alias("recommended_dates"))
+            .alias("recommended_dates")
+        )
     )
 
     return df
+
 
 def _apply_mac_dose2_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataFrame:
     """
     A群C群流脑疫苗第2剂推荐时间
     """
-    df = (
-            df.with_columns([
+    df = df.with_columns(
+        [
             # 为每个人标记A群流脑疫苗免疫剂次数
-            ((pl.col("vaccine_name") == 'A群流脑疫苗') & (pl.col("age") >= 2)).sum().over("id_x").alias("his_ma"),
+            ((pl.col("vaccine_name") == "A群流脑疫苗") & (pl.col("age") >= 2))
+            .sum()
+            .over("id_x")
+            .alias("his_ma"),
             # A群C群流脑疫苗 - 24月龄及以后的接种次数
-            ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col("vacc_month") >=24) & (pl.col("vacc_month") <60) & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("his_mac"),
-            ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col("vacc_month") >=60) & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("his_mac_5"),
-            ((pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col('vaccination_date')<=pl.col('mon_end'))).sum().over("id_x").alias("ac_max_seq")
-        ])
-        .with_columns(
-            pl.when((pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col('his_mac')==1)  & (pl.col('his_mac_5')==0))
-            .then(
-                pl.max_horizontal([
-                    pl.col("birth_date").dt.offset_by("6y"),
-                    pl.col("vaccination_date").dt.offset_by("3y")
-                ])
+            (
+                (pl.col("vaccine_name") == "A群C群流脑疫苗")
+                & (pl.col("vacc_month") >= 24)
+                & (pl.col("vacc_month") < 60)
+                & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
-            .when((pl.col("vaccination_seq") == 1) & (pl.col("vaccine_name") == 'A群C群流脑疫苗') & (pl.col('his_mac_5')==1) & (pl.col('his_mac')==0) & (pl.col('vaccination_seq')==pl.col('ac_max_seq')))
-            .then(
-                pl.max_horizontal([
-                    pl.col("birth_date").dt.offset_by("6y"),
-                    pl.col("vaccination_date").dt.offset_by("3y")
-                ])
+            .sum()
+            .over("id_x")
+            .alias("his_mac"),
+            (
+                (pl.col("vaccine_name") == "A群C群流脑疫苗")
+                & (pl.col("vacc_month") >= 60)
+                & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
-            .otherwise(None)
-            .alias("recommended_dates"),
-            pl.lit('A群C群流脑疫苗').alias("recommended_vacc"),
-            pl.lit(2).alias('recommended_seq')
+            .sum()
+            .over("id_x")
+            .alias("his_mac_5"),
+            (
+                (pl.col("vaccine_name") == "A群C群流脑疫苗")
+                & (pl.col("vaccination_date") <= pl.col("mon_end"))
+            )
+            .sum()
+            .over("id_x")
+            .alias("ac_max_seq"),
+        ]
+    ).with_columns(
+        pl.when(
+            (pl.col("vaccination_seq") == 1)
+            & (pl.col("vaccine_name") == "A群C群流脑疫苗")
+            & (pl.col("his_mac") == 1)
+            & (pl.col("his_mac_5") == 0)
         )
+        .then(
+            pl.max_horizontal(
+                [
+                    pl.col("birth_date").dt.offset_by("6y"),
+                    pl.col("vaccination_date").dt.offset_by("3y"),
+                ]
+            )
+        )
+        .when(
+            (pl.col("vaccination_seq") == 1)
+            & (pl.col("vaccine_name") == "A群C群流脑疫苗")
+            & (pl.col("his_mac_5") == 1)
+            & (pl.col("his_mac") == 0)
+            & (pl.col("vaccination_seq") == pl.col("ac_max_seq"))
+        )
+        .then(
+            pl.max_horizontal(
+                [
+                    pl.col("birth_date").dt.offset_by("6y"),
+                    pl.col("vaccination_date").dt.offset_by("3y"),
+                ]
+            )
+        )
+        .otherwise(None)
+        .alias("recommended_dates"),
+        pl.lit("A群C群流脑疫苗").alias("recommended_vacc"),
+        pl.lit(2).alias("recommended_seq"),
     )
 
     return df
+
 
 def _apply_mav_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataFrame:
     """
     A群流脑疫苗第1剂推荐时间
     """
     vaccine_name = config["vaccine_name"]
-    
+
     df = (
         df
         # 标记需要排除的人员（已接种A群C群流脑疫苗第1针且月龄<24）
         .with_columns(
             (
-                (pl.col("vaccine_name") == 'A群C群流脑疫苗')
-                & (pl.col('vaccination_seq') == 1)
-                & (pl.col('vacc_month') < 24)
-                & (pl.col('vaccination_date')<=pl.col('mon_end'))
+                (pl.col("vaccine_name") == "A群C群流脑疫苗")
+                & (pl.col("vaccination_seq") == 1)
+                & (pl.col("vacc_month") < 24)
+                & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
             .any()
             .over("id_x")
@@ -172,28 +264,30 @@ def _apply_mav_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
         # 过滤掉需要排除的人员
         .filter(~pl.col("should_exclude"))
         # 计算推荐日期
-        .with_columns([
-            pl.col("birth_date").dt.offset_by("6mo").alias("recommended_dates"),
-            pl.lit(vaccine_name).alias("recommended_vacc"),
-            pl.lit(1).alias("recommended_seq"),
-        ])
+        .with_columns(
+            [
+                pl.col("birth_date").dt.offset_by("6mo").alias("recommended_dates"),
+                pl.lit(vaccine_name).alias("recommended_vacc"),
+                pl.lit(1).alias("recommended_seq"),
+            ]
+        )
         # 状态检查
         .with_columns(
             pl.when(
-                (pl.col('recommended_seq') == 1) 
-                & (pl.col("vaccine_name") == vaccine_name) 
-                & (pl.col('vaccination_seq') == 1) 
-                & (pl.col('vaccination_date') > pl.col('recommended_dates'))
+                (pl.col("recommended_seq") == 1)
+                & (pl.col("vaccine_name") == vaccine_name)
+                & (pl.col("vaccination_seq") == 1)
+                & (pl.col("vaccination_date") > pl.col("recommended_dates"))
             )
-            .then(pl.col('recommended_dates'))
+            .then(pl.col("recommended_dates"))
             .when(~pl.col("vaccine_name").is_in([vaccine_name]))
-            .then(pl.col('recommended_dates'))
+            .then(pl.col("recommended_dates"))
             .otherwise(None)
             .alias("recommended_dates")
         )
         .drop("should_exclude")
     )
-    
+
     return df
 
 
@@ -205,80 +299,77 @@ def _apply_mav_dose2_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
     2. p2: 基于 A群C群流脑疫苗第1剂计算（根据月龄判断第2针）
     最终合并两部分结果
     """
-    
+
     # ===== Part 1: A群流脑疫苗 =====
     df_p1 = (
-        df
-        .with_columns(
+        df.with_columns(
             # 推荐日期：max(出生+9月, 接种+3月)
             recommended_dates=pl.when(
-                (pl.col("vaccination_seq") == 1) 
-                & (pl.col("vaccine_name") == 'A群流脑疫苗')
+                (pl.col("vaccination_seq") == 1)
+                & (pl.col("vaccine_name") == "A群流脑疫苗")
             ).then(
-                pl.max_horizontal([
-                    pl.col("birth_date").dt.offset_by("9mo"),
-                    pl.col("vaccination_date").dt.offset_by("3mo")
-                ])
+                pl.max_horizontal(
+                    [
+                        pl.col("birth_date").dt.offset_by("9mo"),
+                        pl.col("vaccination_date").dt.offset_by("3mo"),
+                    ]
+                )
             ),
-            
-            recommended_vacc=pl.lit('A群流脑疫苗'),
-            recommended_seq=pl.lit(2)
+            recommended_vacc=pl.lit("A群流脑疫苗"),
+            recommended_seq=pl.lit(2),
         )
         .with_columns(
             # 判断是否显示推荐
             show_recommendation=(
-                (pl.col("vaccine_name") == 'A群流脑疫苗') &
-                (
-                    (pl.col('vaccination_seq') == 1) |  # 未种第二针
-                    (  # 或已种但延迟
-                        (pl.col('vaccination_seq') == 2) &
-                        (pl.col('vaccination_date') > pl.col('recommended_dates'))
+                (pl.col("vaccine_name") == "A群流脑疫苗")
+                & (
+                    (pl.col("vaccination_seq") == 1)  # 未种第二针
+                    | (  # 或已种但延迟
+                        (pl.col("vaccination_seq") == 2)
+                        & (pl.col("vaccination_date") > pl.col("recommended_dates"))
                     )
                 )
             )
         )
-        .filter(pl.col('show_recommendation'))
-        .drop('show_recommendation')
+        .filter(pl.col("show_recommendation"))
+        .drop("show_recommendation")
     )
-    
+
     # ===== Part 2: A群C群流脑疫苗 =====
     df_p2 = (
-        df
-        .with_columns(
+        df.with_columns(
             # 推荐日期：接种日期 + 3月
             recommended_dates=pl.when(
-                (pl.col("vaccination_seq") == 1) 
-                & (pl.col("vaccine_name") == 'A群C群流脑疫苗')
-                & (pl.col('vacc_month') < 24)
-            ).then(
-                pl.col("vaccination_date").dt.offset_by("3mo")
-            ),
-            
-            recommended_vacc=pl.lit('A群流脑疫苗'),
-            recommended_seq=pl.lit(2)
+                (pl.col("vaccination_seq") == 1)
+                & (pl.col("vaccine_name") == "A群C群流脑疫苗")
+                & (pl.col("vacc_month") < 24)
+            ).then(pl.col("vaccination_date").dt.offset_by("3mo")),
+            recommended_vacc=pl.lit("A群流脑疫苗"),
+            recommended_seq=pl.lit(2),
         )
         .with_columns(
             # 判断是否显示推荐
             show_recommendation=(
-                (pl.col("vaccine_name") == 'A群C群流脑疫苗') &
-                (
-                    (pl.col('vaccination_seq') == 1) |  # 未种第二针
-                    (  # 或已种但延迟（根据月龄判断应该是第2针还是第3针）
+                (pl.col("vaccine_name") == "A群C群流脑疫苗")
+                & (
+                    (pl.col("vaccination_seq") == 1)  # 未种第二针
+                    | (  # 或已种但延迟（根据月龄判断应该是第2针还是第3针）
                         (
-                            pl.col('vaccination_seq') == 
-                            pl.when(pl.col('vacc_month') < 6).then(3).otherwise(2)
-                        ) &
-                        (pl.col('vaccination_date') > pl.col('recommended_dates'))
+                            pl.col("vaccination_seq")
+                            == pl.when(pl.col("vacc_month") < 6).then(3).otherwise(2)
+                        )
+                        & (pl.col("vaccination_date") > pl.col("recommended_dates"))
                     )
                 )
             )
         )
-        .filter(pl.col('show_recommendation'))
-        .drop('show_recommendation')
+        .filter(pl.col("show_recommendation"))
+        .drop("show_recommendation")
     )
-    
+
     # ===== 合并结果 =====
     return pl.concat([df_p1, df_p2])
+
 
 SPECIAL_CALC_HANDLERS = {
     "hbv_dose3": _apply_hbv_dose3_rules,
@@ -291,6 +382,7 @@ SPECIAL_CALC_HANDLERS = {
 # ----------------------------------------------------------------------
 # 主计算流程
 # ----------------------------------------------------------------------
+
 
 def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
     """
@@ -543,10 +635,12 @@ def _calculate_single_vaccine_recommendation(
     df = person.clone()
 
     # 提前创建推荐疫苗信息列
-    df = df.with_columns([
-        pl.lit(vaccine_name).alias("recommended_vacc"),
-        pl.lit(dose).alias("recommended_seq"),
-    ])
+    df = df.with_columns(
+        [
+            pl.lit(vaccine_name).alias("recommended_vacc"),
+            pl.lit(dose).alias("recommended_seq"),
+        ]
+    )
 
     # 区分特殊计算和常规计算
     if special_calc in SPECIAL_CALC_HANDLERS:
@@ -558,7 +652,7 @@ def _calculate_single_vaccine_recommendation(
             base_schedule, dependency, special_calc, vaccine_name
         )
         df = df.with_columns(recommended_expr.alias("recommended_dates"))
-        
+
         # 应用状态检查
         status_expr = _get_vaccination_status_check(vaccine_category, dose)
         df = df.with_columns(status_expr.alias("recommended_dates"))
@@ -576,6 +670,8 @@ def _calculate_single_vaccine_recommendation(
             pl.col("entry_date").first().alias("entry_date"),
             pl.col("vaccination_org").first().alias("vaccination_org"),
             pl.col("current_management_code").first().alias("current_management_code"),
+            pl.col("mon_start").first().alias("mon_start"),
+            pl.col("mon_end").first().alias("mon_end"),
         ]
     )
 
@@ -650,9 +746,7 @@ def _build_recommended_date_expr(
     return pl.lit(None)
 
 
-def _get_vaccination_status_check(
-    vaccine_category: str, dose: int
-) -> pl.Expr:
+def _get_vaccination_status_check(vaccine_category: str, dose: int) -> pl.Expr:
     """
     生成接种状态校验逻辑
     """
@@ -691,6 +785,7 @@ def _get_vaccination_status_check(
 # ----------------------------------------------------------------------
 # 公共接口
 # ----------------------------------------------------------------------
+
 
 def get_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
     """
@@ -738,7 +833,7 @@ def get_overdue_recommendations(
 
     current_date_expr = pl.lit(current_date).str.to_date()
     return (
-        get_consolidated_vaccine_recommendations(person)
+        get_vaccine_recommendations(person)
         .filter(pl.col("recommended_dates") < current_date_expr)
         .sort(["id_x", "recommended_dates"])
     )
@@ -785,19 +880,3 @@ def validate_person_data(person: pl.DataFrame) -> bool:
 
     print("数据验证通过")
     return True
-
-if __name__ == "__main__":
-    validate_person_data(person)
-
-    # 计算所有疫苗推荐时间
-    recommendations = get_consolidated_vaccine_recommendations(person).with_columns(
-        pl.lit(cutoff_date).str.to_date().dt.month_start().alias("mon_start"),
-        pl.lit(cutoff_date).str.to_date().dt.month_end().alias("mon_end"),
-    )
-
-    # 获取特定疫苗推荐
-    # hbv_recommendations = get_recommendations_by_vaccine(person, "乙肝疫苗")
-    # 获取特定人员推荐
-    # person_recommendations = get_recommendations_by_person(person, "0e09122b2d9e4e2e9726faa0eb65d639")
-    # 获取超期推荐
-    # overdue = get_overdue_recommendations(person)
