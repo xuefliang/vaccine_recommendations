@@ -20,7 +20,7 @@ def _apply_hbv_dose3_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
                 & (pl.col("vaccine_name") == vaccine_name)
             )
             .any()
-            .over("id_x")
+            .over("person_id")
             .alias("has_dose2")
         )
         .with_columns(
@@ -60,7 +60,7 @@ def _apply_hbv_dose3_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
         .with_columns(
             pl.max_horizontal(
                 [
-                    pl.col("from_dose1").shift(1).over(["id_x", "vaccine_name"]),
+                    pl.col("from_dose1").shift(1).over(["person_id", "vaccine_name"]),
                     pl.col("from_dose2"),
                 ]
             ).alias("recommended_dates")
@@ -78,7 +78,7 @@ def _apply_mac_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
         df.with_columns(
             ((pl.col("vaccine_name") == "A群流脑疫苗") & (pl.col("age") >= 2))
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("his_ma")
         )
         .filter(
@@ -389,7 +389,7 @@ def _calculate_single_vaccine_recommendation(
     status_expr = _get_vaccination_status_check(vaccine_category, dose)
     df = df.with_columns(status_expr.alias("recommended_dates"))
 
-    result = df.group_by("id_x").agg(
+    result = df.group_by("person_id").agg(
         [
             pl.col("recommended_dates").drop_nulls().first().alias("recommended_dates"),
             pl.col("recommended_vacc").first().alias("recommended_vacc"),
@@ -527,7 +527,7 @@ def get_consolidated_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFra
         return recommendations
 
     return recommendations.filter(pl.col("recommended_dates").is_not_null()).sort(
-        ["id_x", "recommended_dates", "recommended_vacc", "recommended_seq"]
+        ["person_id", "recommended_dates", "recommended_vacc", "recommended_seq"]
     )
 
 
@@ -548,7 +548,7 @@ def get_recommendations_by_person(person: pl.DataFrame, person_id: str) -> pl.Da
     """
     return (
         get_consolidated_vaccine_recommendations(person)
-        .filter(pl.col("id_x") == person_id)
+        .filter(pl.col("person_id") == person_id)
         .sort("recommended_dates")
     )
 
@@ -566,7 +566,7 @@ def get_overdue_recommendations(
     return (
         get_consolidated_vaccine_recommendations(person)
         .filter(pl.col("recommended_dates") < current_date_expr)
-        .sort(["id_x", "recommended_dates"])
+        .sort(["person_id", "recommended_dates"])
     )
 
 
@@ -588,7 +588,7 @@ def validate_person_data(person: pl.DataFrame) -> bool:
     验证 person 数据是否齐全
     """
     required_fields = [
-        "id_x",
+        "person_id",
         "birth_date",
         "age",
         "age_month",

@@ -20,7 +20,7 @@ def _apply_hbv_dose3_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
                 & (pl.col("vaccine_name") == vaccine_name)
             )
             .any()
-            .over("id_x")
+            .over("person_id")
             .alias("has_dose2")
         )
         .with_columns(
@@ -60,7 +60,7 @@ def _apply_hbv_dose3_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
         .with_columns(
             pl.max_horizontal(
                 [
-                    pl.col("from_dose1").shift(1).over(["id_x", "vaccine_name"]),
+                    pl.col("from_dose1").shift(1).over(["person_id", "vaccine_name"]),
                     pl.col("from_dose2"),
                 ]
             ).alias("recommended_dates")
@@ -79,7 +79,7 @@ def _apply_mac_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
             # 为每个人标记A群流脑疫苗免疫剂次数
             ((pl.col("vaccine_name") == "A群流脑疫苗") & (pl.col("age") >= 2))
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("his_ma"),
             # A群C群流脑疫苗 - 24月龄及以后的接种次数
             (
@@ -88,7 +88,7 @@ def _apply_mac_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
                 & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("his_mac"),
             (
                 (pl.col("vaccine_name") == "A群C群流脑疫苗")
@@ -96,7 +96,7 @@ def _apply_mac_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
                 & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("his_mac_before"),
         )
         .filter(  # 合并三个条件
@@ -174,7 +174,7 @@ def _apply_mac_dose2_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
             # 为每个人标记A群流脑疫苗免疫剂次数
             ((pl.col("vaccine_name") == "A群流脑疫苗") & (pl.col("age") >= 2))
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("his_ma"),
             # A群C群流脑疫苗 - 24月龄及以后的接种次数
             (
@@ -184,7 +184,7 @@ def _apply_mac_dose2_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
                 & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("his_mac"),
             (
                 (pl.col("vaccine_name") == "A群C群流脑疫苗")
@@ -192,14 +192,14 @@ def _apply_mac_dose2_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
                 & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("his_mac_5"),
             (
                 (pl.col("vaccine_name") == "A群C群流脑疫苗")
                 & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("ac_max_seq"),
         ]
     ).with_columns(
@@ -258,7 +258,7 @@ def _apply_mav_dose1_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
                 & (pl.col("vaccination_date") <= pl.col("mon_end"))
             )
             .any()
-            .over("id_x")
+            .over("person_id")
             .alias("should_exclude")
         )
         # 过滤掉需要排除的人员
@@ -658,7 +658,7 @@ def _calculate_single_vaccine_recommendation(
         df = df.with_columns(status_expr.alias("recommended_dates"))
 
     # 聚合结果
-    result = df.group_by("id_x").agg(
+    result = df.group_by("person_id").agg(
         [
             pl.col("recommended_dates").drop_nulls().first().alias("recommended_dates"),
             pl.col("recommended_vacc").first().alias("recommended_vacc"),
@@ -796,7 +796,7 @@ def get_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
         return recommendations
 
     return recommendations.filter(pl.col("recommended_dates").is_not_null()).sort(
-        ["id_x", "recommended_dates", "recommended_vacc", "recommended_seq"]
+        ["person_id", "recommended_dates", "recommended_vacc", "recommended_seq"]
     )
 
 
@@ -817,7 +817,7 @@ def get_recommendations_by_person(person: pl.DataFrame, person_id: str) -> pl.Da
     """
     return (
         get_vaccine_recommendations(person)
-        .filter(pl.col("id_x") == person_id)
+        .filter(pl.col("person_id") == person_id)
         .sort("recommended_dates")
     )
 
@@ -835,7 +835,7 @@ def get_overdue_recommendations(
     return (
         get_vaccine_recommendations(person)
         .filter(pl.col("recommended_dates") < current_date_expr)
-        .sort(["id_x", "recommended_dates"])
+        .sort(["person_id", "recommended_dates"])
     )
 
 
@@ -857,7 +857,7 @@ def validate_person_data(person: pl.DataFrame) -> bool:
     验证 person 数据是否齐全
     """
     required_fields = [
-        "id_x",
+        "person_id",
         "birth_date",
         "age",
         "age_month",

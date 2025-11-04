@@ -2,18 +2,23 @@ import polars as pl
 from typing import Optional
 
 
-def load_and_process_person_data(
-    file_path: str,
+def lowercase(df: pl.DataFrame) -> pl.DataFrame:
+    """将 DataFrame 所有列名转换为小写"""
+    return df.rename({col: col.lower() for col in df.columns})
+
+
+def process_person_data(
+    person: pl.DataFrame,
     cutoff_date: str,
     vaccine_tbl: pl.DataFrame,
     replacement_org: str = "777777777777",
     target_vaccines: Optional[list] = None,
 ) -> pl.DataFrame:
     """
-    读取并处理人员疫苗接种数据
+    处理合并后的人员疫苗接种数据
 
     Args:
-        file_path: CSV文件路径
+        person: 已合并的person DataFrame
         cutoff_date: 截止日期 (格式: 'YYYY-MM-DD')
         vaccine_tbl: 疫苗编码对照表 DataFrame
         replacement_org: 需要替换的机构代码，默认777777777777
@@ -25,35 +30,49 @@ def load_and_process_person_data(
     if target_vaccines is None:
         target_vaccines = ["乙肝疫苗", "卡介苗"]
 
-    # 定义schema
-    schema_overrides = {
-        "vaccination_code": pl.String,
-        "birth_date": pl.Datetime,
-        "vaccination_date": pl.Datetime,
-        "hepatitis_mothers": pl.String,
-        "current_management_code": pl.String,
-        "vaccination_org": pl.String,
-        "entry_org": pl.String,
-    }
+    # 确保日期列是正确的类型
+    person = _ensure_datetime_columns(person)
 
     person = (
-        # 1. 读取数据
-        pl.read_csv(file_path, schema_overrides=schema_overrides)
-        # 2. 添加时间相关列
+        person
+        # 1. 添加时间相关列
         .pipe(_add_date_columns, cutoff_date)
-        # 3. 计算年龄
+        # 2. 计算年龄
         .pipe(_calculate_age)
-        # 4. 计算接种月龄和当前月龄
+        # 3. 计算接种月龄和当前月龄
         .pipe(_calculate_months)
-        # 5. 关联疫苗信息并展开
+        # 4. 关联疫苗信息并展开
         .pipe(_join_and_explode_vaccines, vaccine_tbl)
-        # 6. 添加接种序次
+        # 5. 添加接种序次
         .pipe(_add_vaccination_sequence)
-        # 7. 修正接种机构
+        # 6. 修正接种机构
         .pipe(_fix_vaccination_org, replacement_org, target_vaccines)
     )
 
     return person
+
+
+def _ensure_datetime_columns(df: pl.DataFrame) -> pl.DataFrame:
+    """确保日期列是datetime类型"""
+    date_columns = ["birth_date", "vaccination_date"]
+
+    for col in date_columns:
+        if col in df.columns:
+            # 检查列类型，如果不是datetime则转换
+            if df[col].dtype != pl.Datetime:
+                try:
+                    df = df.with_columns(pl.col(col).str.to_datetime().alias(col))
+                except Exception as e:
+                    print(f"Warning: Failed to convert {col} to datetime: {e}")
+                    # 尝试不同的日期格式
+                    try:
+                        df = df.with_columns(
+                            pl.col(col).str.strptime(pl.Datetime, "%Y-%m-%d").alias(col)
+                        )
+                    except Exception as e2:
+                        print(f"Warning: Failed to convert {col} with strptime: {e2}")
+
+    return df
 
 
 def _add_date_columns(df: pl.DataFrame, cutoff_date: str) -> pl.DataFrame:
@@ -130,7 +149,7 @@ def _join_and_explode_vaccines(
         )
         .with_columns(pl.col("vaccine_name").str.split(","))
         .explode("vaccine_name")
-        .sort(["id_x", "vaccine_name", "vaccination_date"])
+        .sort(["person_id", "vaccine_name", "vaccination_date"])
     )
 
 
@@ -141,7 +160,7 @@ def _add_vaccination_sequence(df: pl.DataFrame) -> pl.DataFrame:
             pl.int_range(pl.len())
             .add(1)
             .alias("vaccination_seq")
-            .over(["id_x", "vaccine_name"])
+            .over(["person_id", "vaccine_name"])
         ]
     )
 

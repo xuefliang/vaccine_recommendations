@@ -31,11 +31,11 @@ def cohort_vaccination_coverage(person, management_code=None, age=None):
     # 计算接种率
     result = (
         filtered_person.group_by(["current_management_code", "age"])
-        .agg(pl.col("id_x").n_unique().alias("应种数"))
+        .agg(pl.col("person_id").n_unique().alias("应种数"))
         .join(
             filtered_person.group_by(
                 ["current_management_code", "age", "vaccine_name", "vaccination_seq"]
-            ).agg(pl.col("id_x").n_unique().alias("接种数")),
+            ).agg(pl.col("person_id").n_unique().alias("接种数")),
             on=["current_management_code", "age"],
             how="left",
         )

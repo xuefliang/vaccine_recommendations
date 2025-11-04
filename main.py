@@ -8,25 +8,74 @@ from period_vaccination_coverage import *
 if __name__ == "__main__":
     vaccine_tbl = pl.read_excel("ym_bm.xlsx")
 
-    # 截止日期
-    cutoff_date = "2021-06-30"
+    person = (
+        pl.read_csv(
+            "/mnt/c/Users/Administrator/Downloads/标准库接种率+v1.0.9-2024-12-27/标准库数据/person_standard.csv",
+        )
+        .pipe(lowercase)
+        .with_columns(
+            pl.col("birth_weight").replace("", None)
+        )
+        .cast({
+            "id": pl.String,
+            "birth_date": pl.String,
+            "hepatitis_mothers": pl.String,
+            "current_management_code": pl.String,
+            "birth_weight": pl.Float64, 
+        })
+    )
 
-    person = load_and_process_person_data(
-        file_path="/mnt/d/标准库接种率/data/person2.csv",
-        cutoff_date=cutoff_date,
-        vaccine_tbl=vaccine_tbl,
+    vaccination = (
+        pl.read_csv(
+            "/mnt/c/Users/Administrator/Downloads/标准库接种率+v1.0.9-2024-12-27/标准库数据/person_standard_vaccination.csv",
+        )
+        .pipe(lowercase)
+        .cast(
+            {
+                "id": pl.String,
+                "person_id": pl.String,
+                "type_vaccination_code": pl.Int64,
+                "vaccination_code": pl.String,
+                "vaccination_seq": pl.Int64,
+                "vaccination_date": pl.String,
+                "vaccination_site_code": pl.String,
+                "batch_number": pl.String,
+                "vaccination_org": pl.String,
+                "entry_org": pl.String,
+                "entry_date": pl.String,
+                "temperaturetest_mode_code": pl.Int64,
+                "vac_buying_price": pl.Float64,
+                "manufacturer_code": pl.String,
+            }
+        )
+    )
+
+    # 合并数据
+    person_vacc = vaccination.join(
+        person, left_on="person_id", right_on="id", how="left"
+    ).with_columns(
+        pl.col("birth_date").str.to_datetime(format="%Y%m%dT%H%M%S"),
+        pl.col("vaccination_date").str.to_datetime(format="%Y%m%dT%H%M%S"),
+    )
+
+    # 查看合并后的数据类型
+    print(person_vacc.schema)
+
+    # 合并数据
+    person_vacc = process_person_data(
+        person=person_vacc, cutoff_date="2021-12-27", vaccine_tbl=vaccine_tbl
     )
 
     # 数据验证
-    validate_person_data(person)
+    validate_person_data(person_vacc)
 
-    recommendations = get_vaccine_recommendations(person)
+    recommendations = get_vaccine_recommendations(person_vacc)
 
     # 时段接种率
-    period_coverage = period_vaccination_coverage(person, recommendations)
+    period_coverage = period_vaccination_coverage(person_vacc, recommendations)
 
     # 队列接种率
-    cohort_coverage = cohort_vaccination_coverage(person)
+    cohort_coverage = cohort_vaccination_coverage(person_vacc)
 
     # 查看特定接种单位的数据
     tmp = period_coverage.filter(pl.col("接种单位") == "333647265032")

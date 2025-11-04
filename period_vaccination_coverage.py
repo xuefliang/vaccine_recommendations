@@ -51,7 +51,7 @@ def calculate_MAC_actual_1(person: pl.DataFrame) -> pl.DataFrame:
                 & (pl.col("vacc_month") > 24)
             )
             .sum()
-            .over("id_x")
+            .over("person_id")
             .alias("his_mac")
         )
         .filter(
@@ -61,7 +61,7 @@ def calculate_MAC_actual_1(person: pl.DataFrame) -> pl.DataFrame:
             & (pl.col("vaccination_date").dt.date() <= pl.col("mon_end"))
         )
         .group_by(["vaccination_org", "vaccine_name", "vaccination_seq"])
-        .agg(pl.col("id_x").n_unique().alias("vac"))
+        .agg(pl.col("person_id").n_unique().alias("vac"))
     )
 
 
@@ -84,7 +84,7 @@ def calculate_MAC_expected_1(recommendations: pl.DataFrame) -> pl.DataFrame:
             )
         )
         .group_by(["current_management_code", "recommended_vacc", "recommended_seq"])
-        .agg(pl.col("id_x").n_unique().alias("exp"))
+        .agg(pl.col("person_id").n_unique().alias("exp"))
     )
 
 
@@ -107,7 +107,7 @@ def calculate_MAC_actual_2(person: pl.DataFrame) -> pl.DataFrame:
                     & (pl.col("vacc_month") >= 24)
                 )
                 .sum()
-                .over("id_x")
+                .over("person_id")
                 .alias("his_mac"),
                 (
                     (pl.col("age_month") < 18 * 12)
@@ -115,7 +115,7 @@ def calculate_MAC_actual_2(person: pl.DataFrame) -> pl.DataFrame:
                     & (pl.col("vacc_month") > 60)
                 )
                 .sum()
-                .over("id_x")
+                .over("person_id")
                 .alias("his_mac_60"),
             ]
         )
@@ -127,7 +127,7 @@ def calculate_MAC_actual_2(person: pl.DataFrame) -> pl.DataFrame:
             & (pl.col("vaccination_date").dt.date() <= pl.col("mon_end"))
         )
         .group_by(["vaccination_org", "vaccine_name", "vaccination_seq"])
-        .agg(pl.col("id_x").n_unique().alias("vac"))
+        .agg(pl.col("person_id").n_unique().alias("vac"))
     )
 
 
@@ -138,7 +138,7 @@ def calculate_MAC_expected_2(recommendations: pl.DataFrame) -> pl.DataFrame:
     逻辑：
     - 筛选推荐疫苗为A群C群流脑疫苗、推荐序号为2
     - 推荐日期在当月-1年到当月范围内
-    - 对id_x去重（保留唯一）
+    - 对person_id去重（保留唯一）
     """
     return (
         recommendations.filter(pl.col("recommended_vacc") == "A群C群流脑疫苗")
@@ -150,9 +150,9 @@ def calculate_MAC_expected_2(recommendations: pl.DataFrame) -> pl.DataFrame:
                 >= pl.col("mon_start").dt.offset_by("-1y")
             )
         )
-        .unique(subset=["id_x"])
+        .unique(subset=["person_id"])
         .group_by(["current_management_code", "recommended_vacc", "recommended_seq"])
-        .agg(pl.col("id_x").n_unique().alias("exp"))
+        .agg(pl.col("person_id").n_unique().alias("exp"))
     )
 
 
@@ -175,7 +175,7 @@ def calculate_MAV_actual_2(person: pl.DataFrame) -> pl.DataFrame:
             & (pl.col("vaccination_seq") == 1)
             & (pl.col("vacc_month") < 6)
         )
-        .select("id_x")
+        .select("person_id")
         .unique()
     )
 
@@ -186,7 +186,7 @@ def calculate_MAV_actual_2(person: pl.DataFrame) -> pl.DataFrame:
             & (pl.col("vaccination_seq") == 1)
             & (pl.col("vacc_month") >= 6)
         )
-        .select("id_x")
+        .select("person_id")
         .unique()
     )
 
@@ -204,7 +204,7 @@ def calculate_MAV_actual_2(person: pl.DataFrame) -> pl.DataFrame:
             )
         )
         .group_by(["vaccination_org", "vaccine_name", "vaccination_seq"])
-        .agg(pl.col("id_x").n_unique().alias("vac"))
+        .agg(pl.col("person_id").n_unique().alias("vac"))
     )
     if p1.height > 0:
         parts_to_concat.append(p1)
@@ -223,7 +223,7 @@ def calculate_MAV_actual_2(person: pl.DataFrame) -> pl.DataFrame:
 
         if base_p2.height > 0:
             p2 = (
-                eligible_ids_p2.join(base_p2, on="id_x", how="inner")
+                eligible_ids_p2.join(base_p2, on="person_id", how="inner")
                 .with_columns(
                     [
                         pl.lit("A群流脑疫苗").alias("vaccine_name"),
@@ -231,7 +231,7 @@ def calculate_MAV_actual_2(person: pl.DataFrame) -> pl.DataFrame:
                     ]
                 )
                 .group_by(["vaccination_org", "vaccine_name", "vaccination_seq"])
-                .agg(pl.col("id_x").n_unique().alias("vac"))
+                .agg(pl.col("person_id").n_unique().alias("vac"))
             )
             if p2.height > 0:
                 parts_to_concat.append(p2)
@@ -250,7 +250,7 @@ def calculate_MAV_actual_2(person: pl.DataFrame) -> pl.DataFrame:
 
         if base_p3.height > 0:
             p3 = (
-                eligible_ids_p3.join(base_p3, on="id_x", how="inner")
+                eligible_ids_p3.join(base_p3, on="person_id", how="inner")
                 .with_columns(
                     [
                         pl.lit("A群流脑疫苗").alias("vaccine_name"),
@@ -258,7 +258,7 @@ def calculate_MAV_actual_2(person: pl.DataFrame) -> pl.DataFrame:
                     ]
                 )
                 .group_by(["vaccination_org", "vaccine_name", "vaccination_seq"])
-                .agg(pl.col("id_x").n_unique().alias("vac"))
+                .agg(pl.col("person_id").n_unique().alias("vac"))
             )
             if p3.height > 0:
                 parts_to_concat.append(p3)
@@ -307,59 +307,59 @@ def calculate_MAV_expected_2(
         recommendations
         # 排除条件1：已接种第2剂A群流脑疫苗的人群
         .filter(
-            ~pl.col("id_x").is_in(
+            ~pl.col("person_id").is_in(
                 person.filter(
                     (pl.col("vaccination_seq") == 2)
                     & (pl.col("vaccine_name") == "A群流脑疫苗")
                     & (pl.col("vaccination_date") <= pl.col("mon_end"))
-                )["id_x"].implode()
+                )["person_id"].implode()
             )
         )
         # 排除条件2：第1剂接种A群C群流脑疫苗时vacc_month<6，且已接种3剂次A群C群流脑疫苗的人群
         .filter(
-            ~pl.col("id_x").is_in(
+            ~pl.col("person_id").is_in(
                 person.filter(
                     (pl.col("vaccination_seq") == 1)
                     & (pl.col("vaccine_name") == "A群C群流脑疫苗")
                     & (pl.col("vacc_month") < 6)
                 )
-                .select("id_x")
+                .select("person_id")
                 .join(
                     person.filter(
                         (pl.col("vaccination_seq") == 3)
                         & (pl.col("vaccine_name") == "A群C群流脑疫苗")
                         & (pl.col("vaccination_date") <= pl.col("mon_end"))
-                    ).select("id_x"),
-                    on="id_x",
+                    ).select("person_id"),
+                    on="person_id",
                     how="inner",
-                )["id_x"]
+                )["person_id"]
                 .implode()
             )
         )
         # 排除条件3：第1剂接种A群C群流脑疫苗时vacc_month>=6，且已接种2剂次A群C群流脑疫苗的人群
         .filter(
-            ~pl.col("id_x").is_in(
+            ~pl.col("person_id").is_in(
                 person.filter(
                     (pl.col("vaccination_seq") == 1)
                     & (pl.col("vaccine_name") == "A群C群流脑疫苗")
                     & (pl.col("vacc_month") >= 6)
                 )
-                .select("id_x")
+                .select("person_id")
                 .join(
                     person.filter(
                         (pl.col("vaccination_seq") == 2)
                         & (pl.col("vaccine_name") == "A群C群流脑疫苗")
                         & (pl.col("vaccination_date") <= pl.col("mon_end"))
-                    ).select("id_x"),
-                    on="id_x",
+                    ).select("person_id"),
+                    on="person_id",
                     how="inner",
-                )["id_x"]
+                )["person_id"]
                 .implode()
             )
         )
         # 筛选条件：接种过第1剂且vacc_month<24的人群
         .filter(
-            pl.col("id_x").is_in(
+            pl.col("person_id").is_in(
                 person.filter(
                     (pl.col("vaccination_seq") == 1)
                     & (pl.col("vacc_month") < 24)
@@ -368,7 +368,7 @@ def calculate_MAV_expected_2(
                         | (pl.col("vaccine_name") == "A群C群流脑疫苗")
                     )
                     & (pl.col("vaccination_date") <= pl.col("mon_end"))
-                )["id_x"].implode()
+                )["person_id"].implode()
             )
         )
         # 筛选推荐序列和疫苗类型
@@ -385,7 +385,7 @@ def calculate_MAV_expected_2(
             )
         )
         .group_by(["current_management_code", "recommended_vacc", "recommended_seq"])
-        .agg(pl.col("id_x").n_unique().alias("exp"))
+        .agg(pl.col("person_id").n_unique().alias("exp"))
     )
 
     return result
@@ -415,7 +415,7 @@ def calculate_actual_vaccination(
             & (pl.col("vaccination_date").dt.date() <= pl.col("mon_end"))
         )
         .group_by(["vaccination_org", "vaccine_name", "vaccination_seq"])
-        .agg(pl.col("id_x").n_unique().alias("vac"))
+        .agg(pl.col("person_id").n_unique().alias("vac"))
     )
 
 
@@ -435,7 +435,7 @@ def get_vaccinated_ids(person: pl.DataFrame, vaccine_name: str, seq: int) -> pl.
         (pl.col("vaccination_seq") == seq)
         & (pl.col("vaccine_name") == vaccine_name)
         & (pl.col("vaccination_date") <= pl.col("mon_end"))
-    )["id_x"].implode()
+    )["person_id"].implode()
 
 
 def calculate_expected_vaccination(
@@ -464,13 +464,13 @@ def calculate_expected_vaccination(
     """
     # 排除已接种当前剂次的人员
     df = recommendations.filter(
-        ~pl.col("id_x").is_in(get_vaccinated_ids(person, vaccine_name, seq))
+        ~pl.col("person_id").is_in(get_vaccinated_ids(person, vaccine_name, seq))
     )
 
     # 如果需要前一剂次，则只包含已完成前一剂次的人员
     if require_previous_dose:
         df = df.filter(
-            pl.col("id_x").is_in(get_vaccinated_ids(person, vaccine_name, seq - 1))
+            pl.col("person_id").is_in(get_vaccinated_ids(person, vaccine_name, seq - 1))
         )
 
     df = df.filter(
@@ -492,7 +492,7 @@ def calculate_expected_vaccination(
     # 分组统计
     return df.group_by(
         ["current_management_code", "recommended_vacc", "recommended_seq"]
-    ).agg(pl.col("id_x").n_unique().alias("exp"))
+    ).agg(pl.col("person_id").n_unique().alias("exp"))
 
 
 def calculate_coverage(

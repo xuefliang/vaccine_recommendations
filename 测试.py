@@ -241,3 +241,14 @@ tmp5=(
     .filter(pl.col("vaccine_name").is_in(['A群流脑疫苗','A群C群流脑疫苗']))
 )
 
+def lowercase(df: pl.DataFrame) -> pl.DataFrame:
+    """将 DataFrame 所有列名转换为小写"""
+    return df.rename({col: col.lower() for col in df.columns})
+
+person=pl.read_csv('/mnt/c/Users/Administrator/Downloads/标准库接种率+v1.0.9-2024-12-27/标准库数据/person_standard.csv').pipe(lowercase)
+
+vaccination=pl.read_csv('/mnt/c/Users/Administrator/Downloads/标准库接种率+v1.0.9-2024-12-27/标准库数据/person_standard_vaccination.csv').pipe(lowercase)
+
+person=(
+    vaccination.join(person,left_on='person_id',right_on='id',how='left')
+)
