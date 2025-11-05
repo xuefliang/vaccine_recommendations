@@ -10,44 +10,37 @@ if __name__ == "__main__":
 
     person = (
         pl.read_csv(
-            "/mnt/c/Users/Administrator/Downloads/标准库接种率+v1.0.9-2024-12-27/标准库数据/person_standard.csv",
+            "./doc/标准库数据/person_standard.csv",
+            schema_overrides={
+                "ID":pl.String,
+                "BIRTH_DATE":pl.String,
+                "HEPATITIS_MOTHERS":pl.String,
+                "CURRENT_MANAGEMENT_CODE":pl.String,
+                "BIRTH_WEIGHT":pl.Float64
+            }
         )
         .pipe(lowercase)
-        .with_columns(
-            pl.col("birth_weight").replace("", None)
-        )
-        .cast({
-            "id": pl.String,
-            "birth_date": pl.String,
-            "hepatitis_mothers": pl.String,
-            "current_management_code": pl.String,
-            "birth_weight": pl.Float64, 
-        })
     )
 
     vaccination = (
         pl.read_csv(
-            "/mnt/c/Users/Administrator/Downloads/标准库接种率+v1.0.9-2024-12-27/标准库数据/person_standard_vaccination.csv",
+            "./doc/标准库数据/person_standard_vaccination.csv",
+            schema_overrides={"ID":pl.String,
+            "PERSON_ID":pl.String,
+            "TYPE_VACCINATION_CODE":pl.String,
+            "VACCINATION_CODE":pl.String,
+            "VACCINATION_SEQ":pl.Int32,
+            "VACCINATION_DATE":pl.String,
+            "VACCINATION_SITE_CODE":pl.String,
+            "BATCH_NUMBER":pl.String,
+            "VACCINATION_ORG":pl.String,
+            "ENTRY_ORG":pl.String,
+            "ENTRY_DATE":pl.String,
+            "TEMPERATURETEST_MODE_CODE":pl.Int64,
+            "VAC_BUYING_PRICE":pl.Float64,
+            "MANUFACTURER_CODE":pl.String}
         )
         .pipe(lowercase)
-        .cast(
-            {
-                "id": pl.String,
-                "person_id": pl.String,
-                "type_vaccination_code": pl.Int64,
-                "vaccination_code": pl.String,
-                "vaccination_seq": pl.Int64,
-                "vaccination_date": pl.String,
-                "vaccination_site_code": pl.String,
-                "batch_number": pl.String,
-                "vaccination_org": pl.String,
-                "entry_org": pl.String,
-                "entry_date": pl.String,
-                "temperaturetest_mode_code": pl.Int64,
-                "vac_buying_price": pl.Float64,
-                "manufacturer_code": pl.String,
-            }
-        )
     )
 
     # 合并数据
@@ -59,16 +52,17 @@ if __name__ == "__main__":
     )
 
     # 查看合并后的数据类型
-    print(person_vacc.schema)
+    person_vacc.schema
 
     # 合并数据
     person_vacc = process_person_data(
-        person=person_vacc, cutoff_date="2021-12-27", vaccine_tbl=vaccine_tbl
+        person=person_vacc, cutoff_date="2025-01-05", vaccine_tbl=vaccine_tbl
     )
 
     # 数据验证
     validate_person_data(person_vacc)
 
+    # 推荐日期
     recommendations = get_vaccine_recommendations(person_vacc)
 
     # 时段接种率
@@ -78,9 +72,9 @@ if __name__ == "__main__":
     cohort_coverage = cohort_vaccination_coverage(person_vacc)
 
     # 查看特定接种单位的数据
-    tmp = period_coverage.filter(pl.col("接种单位") == "333647265032")
+    tmp = period_coverage.filter(pl.col("接种单位") == "307473238584")
 
-    tmp = cohort_coverage.filter(pl.col("current_management_code") == "333647265032")
+    tmp = cohort_coverage.filter(pl.col("current_management_code") == "307473238584")
 
     # 获取特定疫苗推荐
     # hbv_recommendations = get_recommendations_by_vaccine(person, "乙肝疫苗")
