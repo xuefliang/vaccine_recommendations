@@ -496,7 +496,7 @@ def calculate_expected_vaccination(
 
 
 def calculate_coverage(
-    actual: pl.DataFrame, expected: pl.DataFrame, how: str = "right"
+    actual: pl.DataFrame, expected: pl.DataFrame, how: str = "left"
 ) -> pl.DataFrame:
     """
     计算接种率
@@ -504,7 +504,7 @@ def calculate_coverage(
     Args:
         actual: 实种数据框
         expected: 应种数据框
-        how: 连接方式，默认为'right'
+        how: 连接方式，默认为'left'
 
     Returns:
         接种率数据框
@@ -529,7 +529,7 @@ def calculate_coverage(
             right_on=["current_management_code", "recommended_vacc", "recommended_seq"],
             how=how,
         )
-        .with_columns(pl.col("vac").fill_null(0))
+        .with_columns(pl.col("exp").fill_null(0))
         .with_columns(
             (pl.col("vac") / (pl.col("vac") + pl.col("exp")) * 100).alias("percent")
         )
@@ -642,7 +642,7 @@ def calculate_vaccine_coverage_for_all_doses(
                 )
 
             # 计算接种率
-            coverage = calculate_coverage(actual, expected, how="right")
+            coverage = calculate_coverage(actual, expected, how="left")
 
             if coverage.height > 0:
                 coverage_list.append(coverage)

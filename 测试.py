@@ -252,3 +252,18 @@ vaccination=pl.read_csv('/mnt/c/Users/Administrator/Downloads/标准库接种率
 person=(
     vaccination.join(person,left_on='person_id',right_on='id',how='left')
 )
+
+temp=(
+    person_vacc
+    .filter(pl.col.person_id=='7bbf0019e1464f6c9d196de612398f27')
+)
+
+temp2=(
+    recommendations
+    .filter(pl.col.person_id=='7bbf0019e1464f6c9d196de612398f27')
+)
+
+actual=(
+    calculate_actual_vaccination(person_vacc, "乙肝疫苗", 1, 18*12)
+    .filter(pl.col.vaccination_org=='307473238584')
+)
