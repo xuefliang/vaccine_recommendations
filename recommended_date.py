@@ -494,7 +494,7 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "vaccine_category": "百白破疫苗",
             "dose": 4,
             "base_schedule": "18mo",
-            "dependency": {"prev_dose": 3, "min_interval": "1mo"},
+            "dependency": {"prev_dose": 3, "min_interval": "6mo"},
             "special_calc": None,
         },
         {
