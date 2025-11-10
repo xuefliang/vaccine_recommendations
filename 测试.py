@@ -267,3 +267,105 @@ actual=(
     calculate_actual_vaccination(person_vacc, "乙肝疫苗", 1, 18*12)
     .filter(pl.col.vaccination_org=='307473238584')
 )
+
+tmp1=(
+    pl.read_excel('/mnt/c/Users/Administrator/Downloads/新建 Microsoft Excel 工作表.xlsx')
+)
+
+tmp2=(
+    recommendations
+    .filter(pl.col.person_id.is_in(tmp1['A'].implode()))
+    .filter(pl.col.recommended_vacc=='百白破疫苗')
+    .filter(pl.col.recommended_seq==5)
+    .select(['person_id','recommended_dates'])
+)
+
+tmp3=(
+    tmp1.join(tmp2,left_on='A',right_on='person_id',how='left')
+    .with_columns((pl.col.B-pl.col.recommended_dates.dt.date()).alias('差异'))
+)
+
+tmp4=(
+    recommendations
+    .filter(pl.col.recommended_vacc=='百白破疫苗')
+    .filter(pl.col.recommended_seq==5)
+    .filter(pl.col.current_management_code=='307473238584')
+    .filter(pl.col("age_month") <= 7*12)
+    .filter(
+        (pl.col('recommended_dates').dt.date() <= pl.col('mon_end')) & 
+        (pl.col('recommended_dates').dt.date() >= pl.col('mon_start').dt.offset_by("-1y"))
+    )
+)
+
+tmp5=(
+    tmp4
+    .filter(~pl.col.person_id.is_in(tmp1['A'].implode()))
+)
+
+tmp6=(
+    person_vacc
+    .filter(pl.col.person_id=='00771c80b8e94843b28e90d94735103c')
+    .filter(pl.col.vaccine_name.is_in(['百白破疫苗','白破疫苗']))
+)
+
+
+recommendations_DPT_5 = (
+    person_vacc
+    .with_columns(
+            ((pl.col("vaccine_name") == "百白破疫苗"))
+            .sum()
+            .over("person_id")
+            .alias("his_dpt"),
+            ((pl.col("vaccine_name") == "白破疫苗"))
+            .sum()
+            .over("person_id")
+            .alias("his_dt"))
+    .filter(~((pl.col('his_dpt')==4) & (pl.col('his_dt')==1)))
+    .with_columns(
+        pl.when(
+        (pl.col("vaccination_seq") == 4) & (pl.col("vaccine_name") == '百白破疫苗')
+    )
+    .then(
+        pl.max_horizontal([
+                pl.col("birth_date").dt.offset_by("6y"),
+                pl.col("vaccination_date").dt.offset_by("12mo")
+        ])
+    )
+    .otherwise(None)
+    .alias("recommended_dates"),
+    pl.lit('百白破疫苗').alias("recommended_vacc"),
+    pl.lit(5).alias('recommended_seq')
+    )
+    .with_columns(
+        pl.when(
+            (pl.col('recommended_seq') == 5) & (pl.col("vaccine_name") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 5) &
+            (pl.col('vaccination_date') > pl.col('recommended_dates'))
+        )
+        .then(pl.col('recommended_dates'))
+        .when(
+            (pl.col('recommended_seq') == 5) & (pl.col("vaccine_name") == '百白破疫苗') &
+            (pl.col('vaccination_seq') == 4))
+        .then(pl.col('recommended_dates'))
+        .otherwise(None)
+    )
+)
+
+(
+    recommendations
+    .filter(pl.col.recommended_vacc=='HPV疫苗')
+)
+
+(
+    period_coverage
+    .filter(pl.col('疫苗名称')=='HPV疫苗')
+)
+
+tmp6=(
+    person_vacc
+    .filter(pl.col('vaccine_name')=='HPV疫苗')
+    .filter(
+        (pl.col('vaccination_date').dt.date() <= pl.col('mon_end')) & 
+        (pl.col('vaccination_date').dt.date() >= pl.col('mon_start'))
+    )
+)

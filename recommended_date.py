@@ -370,6 +370,64 @@ def _apply_mav_dose2_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
     # ===== 合并结果 =====
     return pl.concat([df_p1, df_p2])
 
+def _apply_dpt_dose5_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataFrame:
+    """
+    百白破疫苗第5剂推荐时间
+    """
+    df = (
+        df.with_columns(
+            # 统计百白破疫苗历史接种次数
+            ((pl.col("vaccine_name") == "百白破疫苗"))
+            .sum()
+            .over("person_id")
+            .alias("his_dpt"),
+            # 统计白破疫苗历史接种次数
+            ((pl.col("vaccine_name") == "白破疫苗"))
+            .sum()
+            .over("person_id")
+            .alias("his_dt"),
+        )
+        # 排除已完成4剂百白破+1剂白破的人群
+        .filter(~((pl.col("his_dpt") == 4) & (pl.col("his_dt") == 1)))
+        .with_columns(
+            # 计算推荐日期：取 出生日期+6年 和 第4剂接种日期+12月 的较大值
+            pl.when(
+                (pl.col("vaccination_seq") == 4) & 
+                (pl.col("vaccine_name") == "百白破疫苗")
+            )
+            .then(
+                pl.max_horizontal([
+                    pl.col("birth_date").dt.offset_by("6y"),
+                    pl.col("vaccination_date").dt.offset_by("12mo")
+                ])
+            )
+            .otherwise(None)
+            .alias("recommended_dates"),
+            pl.lit("百白破疫苗").alias("recommended_vacc"),
+            pl.lit(5).alias("recommended_seq")
+        )
+        # 状态检查
+        .with_columns(
+            pl.when(
+                # 情况1：已接种第5剂但延迟了
+                (pl.col("recommended_seq") == 5) & 
+                (pl.col("vaccine_name") == "百白破疫苗") &
+                (pl.col("vaccination_seq") == 5) &
+                (pl.col("vaccination_date") > pl.col("recommended_dates"))
+            )
+            .then(pl.col("recommended_dates"))
+            .when(
+                # 情况2：只接种到第4剂，显示第5剂推荐
+                (pl.col("recommended_seq") == 5) & 
+                (pl.col("vaccine_name") == "百白破疫苗") &
+                (pl.col("vaccination_seq") == 4)
+            )
+            .then(pl.col("recommended_dates"))
+            .otherwise(None)
+            .alias("recommended_dates")
+        )
+    )
+    return df
 
 SPECIAL_CALC_HANDLERS = {
     "hbv_dose3": _apply_hbv_dose3_rules,
@@ -377,6 +435,7 @@ SPECIAL_CALC_HANDLERS = {
     "mac_dose2": _apply_mac_dose2_rules,
     "mav_dose2": _apply_mav_dose2_rules,
     "mav_dose1": _apply_mav_dose1_rules,
+    "dpt_dose5": _apply_dpt_dose5_rules,
 }
 
 # ----------------------------------------------------------------------
@@ -501,9 +560,9 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "vaccine_name": "百白破疫苗",
             "vaccine_category": "百白破疫苗",
             "dose": 5,
-            "base_schedule": "6y",
-            "dependency": {"prev_dose": 4, "min_interval": "12mo"},
-            "special_calc": None,
+            "base_schedule": None,
+            "dependency": None,
+            "special_calc": "dpt_dose5",
         },
         # 白破疫苗
         {
@@ -598,6 +657,23 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "2y",
             "dependency": {"prev_dose": 1, "min_interval": "6mo"},
             "special_calc": "hav_inactivated",
+        },
+        # HPV
+        {
+            "vaccine_name": "HPV疫苗",
+            "vaccine_category": "HPV疫苗",
+            "dose": 1,
+            "base_schedule": "13y",
+            "dependency": None,
+            "special_calc": None,
+        },
+        {
+            "vaccine_name": "HPV疫苗",
+            "vaccine_category": "HPV疫苗",
+            "dose": 2,
+            "base_schedule": "18mo",
+            "dependency": {"prev_dose": 1, "min_interval": "6mo"},
+            "special_calc": None,
         },
     ]
 
