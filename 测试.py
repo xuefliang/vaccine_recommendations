@@ -369,3 +369,157 @@ tmp6=(
         (pl.col('vaccination_date').dt.date() >= pl.col('mon_start'))
     )
 )
+
+temp=(
+    recommendations
+    .filter(pl.col.recommended_vacc=='HPV疫苗')
+    .filter(pl.col.gender_code==2)
+)
+
+temp=(
+    person_vacc
+    .filter(
+                (pl.col("gender_code") == 2)  # 仅女性
+                & (pl.col("age_month") <= 14*12)  # 年龄限制
+                & (pl.col("vaccine_name") == "HPV疫苗")  # 疫苗名称
+                & (pl.col("age_month") >= 13*12)
+                & (pl.col("vaccination_date").dt.date() >= pl.col("mon_start"))  # 当月开始
+                & (pl.col("vaccination_date").dt.date() <= pl.col("mon_end")) 
+    )
+)
+
+tmp1=(
+    person_vacc
+    .filter(
+        (pl.col.person_id.is_in(['0b1d48d65bf04ff286ca36b8f1bd5f35']))
+        & (pl.col("vaccine_name") == "HPV疫苗") 
+    )
+)
+
+        hpv_records=(person_vacc.filter(
+            (pl.col("gender_code") == 2)
+            & (pl.col("vaccine_name") == "HPV疫苗")
+            & (pl.col("birth_date") >= pl.date(2011,11,11))
+            & (pl.col("age_month") < 14*12)
+        ).select([
+            "person_id",
+            "birth_date",
+            "vaccination_seq",
+            "vaccination_date",
+            "vaccination_org",
+            "vaccine_name",
+            "mon_start",
+            "mon_end"
+        ]))
+        
+        # 获取第1剂接种记录
+        dose1 = hpv_records.filter(pl.col("vaccination_seq") == 1).select([
+            pl.col("person_id"),
+            pl.col("vaccination_date").alias("dose1_date")
+        ])
+        
+        # 获取第2剂接种记录（在统计期内）
+        dose2 = hpv_records.filter(
+            (pl.col("vaccination_seq") == 2)
+            & (pl.col("vaccination_date").dt.date() >= pl.col("mon_start"))
+            & (pl.col("vaccination_date").dt.date() <= pl.col("mon_end"))
+        ).select([
+            pl.col("person_id"),
+            pl.col("vaccination_date").alias("dose2_date"),
+            pl.col("vaccination_org"),
+            pl.col("vaccine_name"),
+            pl.col("vaccination_seq")
+        ])
+        
+        # 获取第3剂接种记录（在统计期内）
+        dose3 = hpv_records.filter(
+            (pl.col("vaccination_seq") == 3)
+            & (pl.col("vaccination_date").dt.date() >= pl.col("mon_start"))
+            & (pl.col("vaccination_date").dt.date() <= pl.col("mon_end"))
+        ).select([
+            pl.col("person_id"),
+            pl.col("vaccination_date").alias("dose3_date"),
+            pl.col("vaccination_org"),
+            pl.col("vaccine_name")
+        ])
+        
+        # 情况1：第1剂和第2剂间隔≥5个月，统计第2剂
+        valid_dose2 = (
+            dose1.join(dose2, on="person_id", how="inner")
+            .with_columns([
+                # 计算间隔天数
+                (pl.col("dose2_date") - pl.col("dose1_date")).dt.total_days().alias("interval_days")
+            ])
+            .filter(pl.col("interval_days") >= 150)  # 5个月 ≈ 150天
+            .with_columns([
+                pl.lit(2).cast(pl.Int64).alias("vaccination_seq")
+            ])
+            .select(['person_id','vaccination_org','vaccine_name','vaccination_seq'])
+        )
+        
+        # 情况2：第1剂和第2剂间隔<5个月，统计第3剂
+        # 先找出间隔<5个月的人员ID
+        short_interval_ids = (
+            dose1.join(
+                hpv_records.filter(pl.col("vaccination_seq") == 2).select([
+                    pl.col("person_id"),
+                    pl.col("vaccination_date").alias("dose2_date")
+                ]), 
+                on="person_id", 
+                how="inner"
+            )
+            .with_columns([
+                (pl.col("dose2_date") - pl.col("dose1_date")).dt.total_days().alias("interval_days")
+            ])
+            .filter(pl.col("interval_days") < 150)  # 间隔<5个月
+            .select("person_id")
+        )
+        
+        # 统计这些人的第3剂（在统计期内）
+        valid_dose3 = (
+            short_interval_ids.join(dose3, on="person_id", how="inner")
+            .with_columns([
+                pl.lit(2).cast(pl.Int64).alias("vaccination_seq")  # 统计为第2剂
+            ])
+            .select(['person_id','vaccination_org','vaccine_name','vaccination_seq'])
+        )
+        
+        
+        # 合并两种情况
+        parts_to_concat = []
+        if valid_dose2.height > 0:
+            parts_to_concat.append(valid_dose2)
+        if valid_dose3.height > 0:
+            parts_to_concat.append(valid_dose3)
+        
+        if parts_to_concat:
+            return (
+                pl.concat(parts_to_concat)
+                .group_by(["vaccination_org", "vaccine_name", "vaccination_seq"])
+                .agg(pl.col("person_id").len().alias("vac"))
+            )
+        else:
+            # 返回空DataFrame但保持schema一致
+            return pl.DataFrame(
+                schema={
+                    "vaccination_org": pl.Int64,
+                    "vaccine_name": pl.Utf8,
+                    "vaccination_seq": pl.Int64,
+                    "vac": pl.Int64,
+                }
+            )
+    
+    # 其他剂次：正常统计
+    else:
+        return (
+            person.filter(
+                (pl.col("gender_code") == 2)  # 仅女性
+                & (pl.col("age_month") < actual_max_age)  # 年龄限制
+                & (pl.col("vaccination_seq") == seq)  # 接种序号
+                & (pl.col("vaccine_name") == "HPV疫苗")  # 疫苗名称
+                & (pl.col("vaccination_date").dt.date() >= pl.col("mon_start"))  # 当月开始
+                & (pl.col("vaccination_date").dt.date() <= pl.col("mon_end"))  # 当月结束
+            )
+            .group_by(["vaccination_org", "vaccine_name", "vaccination_seq"])
+            .agg(pl.col("person_id").n_unique().alias("vac"))  # 统计唯一人数
+        )

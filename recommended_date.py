@@ -370,6 +370,7 @@ def _apply_mav_dose2_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
     # ===== 合并结果 =====
     return pl.concat([df_p1, df_p2])
 
+
 def _apply_dpt_dose5_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataFrame:
     """
     百白破疫苗第5剂推荐时间
@@ -377,12 +378,12 @@ def _apply_dpt_dose5_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
     df = (
         df.with_columns(
             # 统计百白破疫苗历史接种次数
-            ((pl.col("vaccine_name") == "百白破疫苗"))
+            (pl.col("vaccine_name") == "百白破疫苗")
             .sum()
             .over("person_id")
             .alias("his_dpt"),
             # 统计白破疫苗历史接种次数
-            ((pl.col("vaccine_name") == "白破疫苗"))
+            (pl.col("vaccine_name") == "白破疫苗")
             .sum()
             .over("person_id")
             .alias("his_dt"),
@@ -392,35 +393,37 @@ def _apply_dpt_dose5_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
         .with_columns(
             # 计算推荐日期：取 出生日期+6年 和 第4剂接种日期+12月 的较大值
             pl.when(
-                (pl.col("vaccination_seq") == 4) & 
-                (pl.col("vaccine_name") == "百白破疫苗")
+                (pl.col("vaccination_seq") == 4)
+                & (pl.col("vaccine_name") == "百白破疫苗")
             )
             .then(
-                pl.max_horizontal([
-                    pl.col("birth_date").dt.offset_by("6y"),
-                    pl.col("vaccination_date").dt.offset_by("12mo")
-                ])
+                pl.max_horizontal(
+                    [
+                        pl.col("birth_date").dt.offset_by("6y"),
+                        pl.col("vaccination_date").dt.offset_by("12mo"),
+                    ]
+                )
             )
             .otherwise(None)
             .alias("recommended_dates"),
             pl.lit("百白破疫苗").alias("recommended_vacc"),
-            pl.lit(5).alias("recommended_seq")
+            pl.lit(5).alias("recommended_seq"),
         )
         # 状态检查
         .with_columns(
             pl.when(
                 # 情况1：已接种第5剂但延迟了
-                (pl.col("recommended_seq") == 5) & 
-                (pl.col("vaccine_name") == "百白破疫苗") &
-                (pl.col("vaccination_seq") == 5) &
-                (pl.col("vaccination_date") > pl.col("recommended_dates"))
+                (pl.col("recommended_seq") == 5)
+                & (pl.col("vaccine_name") == "百白破疫苗")
+                & (pl.col("vaccination_seq") == 5)
+                & (pl.col("vaccination_date") > pl.col("recommended_dates"))
             )
             .then(pl.col("recommended_dates"))
             .when(
                 # 情况2：只接种到第4剂，显示第5剂推荐
-                (pl.col("recommended_seq") == 5) & 
-                (pl.col("vaccine_name") == "百白破疫苗") &
-                (pl.col("vaccination_seq") == 4)
+                (pl.col("recommended_seq") == 5)
+                & (pl.col("vaccine_name") == "百白破疫苗")
+                & (pl.col("vaccination_seq") == 4)
             )
             .then(pl.col("recommended_dates"))
             .otherwise(None)
@@ -429,6 +432,28 @@ def _apply_dpt_dose5_rules(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataF
     )
     return df
 
+
+def _apply_hpv_gender_filter(df: pl.DataFrame, config: Dict[str, Any]) -> pl.DataFrame:
+    """
+    HPV疫苗性别筛选:仅对女性(gender_code=2)推荐
+    """
+    base_schedule = config.get("base_schedule")
+    dependency = config.get("dependency")
+    vaccine_name = config["vaccine_name"]
+
+    # 先应用性别筛选
+    df = df.filter(pl.col("gender_code") == "2")
+
+    # 然后计算推荐日期
+    recommended_expr = _build_recommended_date_expr(
+        base_schedule, dependency, None, vaccine_name
+    )
+
+    df = df.with_columns(recommended_expr.alias("recommended_dates"))
+
+    return df
+
+
 SPECIAL_CALC_HANDLERS = {
     "hbv_dose3": _apply_hbv_dose3_rules,
     "mac_dose1": _apply_mac_dose1_rules,
@@ -436,6 +461,7 @@ SPECIAL_CALC_HANDLERS = {
     "mav_dose2": _apply_mav_dose2_rules,
     "mav_dose1": _apply_mav_dose1_rules,
     "dpt_dose5": _apply_dpt_dose5_rules,
+    "hpv_gender_filter": _apply_hpv_gender_filter,
 }
 
 # ----------------------------------------------------------------------
@@ -666,14 +692,16 @@ def calculate_all_vaccine_recommendations(person: pl.DataFrame) -> pl.DataFrame:
             "base_schedule": "13y",
             "dependency": None,
             "special_calc": None,
+            "gender_restriction": 2,
         },
         {
             "vaccine_name": "HPV疫苗",
             "vaccine_category": "HPV疫苗",
             "dose": 2,
-            "base_schedule": "18mo",
+            "base_schedule": "13y",
             "dependency": {"prev_dose": 1, "min_interval": "6mo"},
             "special_calc": None,
+            "gender_restriction": 2,
         },
     ]
 
@@ -707,8 +735,16 @@ def _calculate_single_vaccine_recommendation(
     base_schedule = config.get("base_schedule")
     dependency = config.get("dependency")
     special_calc = config.get("special_calc")
+    gender_restriction = config.get("gender_restriction")
 
     df = person.clone()
+
+    # 性别筛选（针对HPV等有性别限制的疫苗）
+    if gender_restriction:
+        df = df.filter(pl.col("gender_code") == gender_restriction)
+        # 如果筛选后没有数据，直接返回空
+        if df.height == 0:
+            return None
 
     # 提前创建推荐疫苗信息列
     df = df.with_columns(
@@ -741,6 +777,7 @@ def _calculate_single_vaccine_recommendation(
             pl.col("recommended_seq").first().alias("recommended_seq"),
             pl.col("birth_date").first().alias("birth_date"),
             pl.col("age").first().alias("age"),
+            pl.col("gender_code").first().alias("gender_code"),
             pl.col("age_month").first().alias("age_month"),
             pl.col("entry_org").first().alias("entry_org"),
             pl.col("entry_date").first().alias("entry_date"),
@@ -936,13 +973,13 @@ def validate_person_data(person: pl.DataFrame) -> bool:
         "person_id",
         "birth_date",
         "age",
+        "gender_code",
         "age_month",
         "vacc_month",
         "vaccine_name",
         "vaccination_seq",
         "vaccination_date",
         "entry_org",
-        "entry_date",
         "vaccination_org",
         "current_management_code",
         "birth_weight",

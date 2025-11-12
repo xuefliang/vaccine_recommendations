@@ -16,6 +16,7 @@ if __name__ == "__main__":
             "HEPATITIS_MOTHERS": pl.String,
             "CURRENT_MANAGEMENT_CODE": pl.String,
             "BIRTH_WEIGHT": pl.Float64,
+            "GENDER_CODE": pl.Int32,
         },
     ).pipe(lowercase)
 
